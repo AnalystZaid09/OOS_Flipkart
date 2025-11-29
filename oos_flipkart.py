@@ -100,7 +100,7 @@ def style_doc_column(s):
 
 # Process button
 if sales_file and inventory_file and pm_file:
-    if st.button("🚀 Process Data", type="primary", use_container_width=True):
+    if st.button("🚀 Process Data", type="primary", width='stretch'):
         with st.spinner("Processing your data..."):
             try:
                 # Read files
@@ -179,9 +179,9 @@ if sales_file and inventory_file and pm_file:
                 st.markdown("### 📊 Processed Data Preview")
                 if "DOC" in F_Sales.columns:
                     styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
-                    st.dataframe(styled_df, use_container_width=True, height=400)
+                    st.dataframe(styled_df, width='stretch', height=400)
                 else:
-                    st.dataframe(F_Sales, use_container_width=True, height=400)
+                    st.dataframe(F_Sales,width='stretch', height=400)
                 
                 # Excel with same conditional formatting
                 def create_formatted_excel(df):
@@ -285,7 +285,7 @@ if sales_file and inventory_file and pm_file:
                     data=excel_data,
                     file_name="Flipkart_Sales_Analysis_Formatted.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
+                    width='stretch'
                 )
                 
                 # Simple count-based insights (same ranges, no charts)
