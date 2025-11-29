@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 from io import BytesIO
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, Font
+from openpyxl.utils import get_column_letter
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -38,11 +39,11 @@ with st.sidebar:
     st.markdown("""
     ### 📈 DOC Color Legend:
     - 🔴 **Red (0-7 days)**: Critical - Immediate action needed
-    - 🟡 **Yellow (7-15 days)**: Low - Reorder soon
+    - 🟠 **Orange (7-15 days)**: Low - Reorder soon
     - 🟢 **Green (15-30 days)**: Optimal - Good stock level
-    - 🔵 **Blue (30-45 days)**: High - Monitor sales
-    - ⚫ **Grey (45-60 days)**: Very High - Reduce ordering
-    - ⚪ **White (60-90 days)**: Excess - Stop ordering
+    - 🟡 **Yellow (30-45 days)**: Monitor sales
+    - 🔵 **Sky Blue (45-60 days)**: High - Monitor closely
+    - 🟤 **Brown (60-90 days)**: Excess - Stop ordering
     - ⬛ **Black (>90 days)**: Overstocked - Clearance needed
     """)
 
@@ -72,6 +73,30 @@ with col2:
     )
 
 st.markdown("---")
+
+# 🔴🟠🟢 DOC styling for Streamlit table
+def style_doc_column(s):
+    styles = []
+    for v in s:
+        try:
+            value = float(v)
+        except (TypeError, ValueError):
+            value = 0
+        if 0 <= value < 7:
+            styles.append('background-color: #FF0000; color: white;')
+        elif 7 <= value < 15:
+            styles.append('background-color: #FFA500; color: white;')  # orange
+        elif 15 <= value < 30:
+            styles.append('background-color: #008000; color: white;')  # green
+        elif 30 <= value < 45:
+            styles.append('background-color: #FFFF00; color: black;')  # yellow (black text better)
+        elif 45 <= value < 60:
+            styles.append('background-color: #87CEEB; color: black;')  # sky blue
+        elif 60 <= value < 90:
+            styles.append('background-color: #8B4513; color: white;')  # brown
+        else:  # >= 90
+            styles.append('background-color: #000000; color: white;')  # black
+    return styles
 
 # Process button
 if sales_file and inventory_file and pm_file:
@@ -139,7 +164,7 @@ if sales_file and inventory_file and pm_file:
                 
                 st.success("✅ Data processed successfully!")
                 
-                # Display summary metrics
+                # Summary metrics
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total Products", len(F_Sales))
@@ -150,11 +175,15 @@ if sales_file and inventory_file and pm_file:
                 with col4:
                     st.metric("Avg DOC", f"{F_Sales['DOC'].mean():.1f} days")
                 
-                # Display data
+                # 🔥 Styled DataFrame in app (DOC column colored)
                 st.markdown("### 📊 Processed Data Preview")
-                st.dataframe(F_Sales, use_container_width=True, height=400)
+                if "DOC" in F_Sales.columns:
+                    styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
+                    st.dataframe(styled_df, use_container_width=True, height=400)
+                else:
+                    st.dataframe(F_Sales, use_container_width=True, height=400)
                 
-                # Function to apply conditional formatting and save to Excel
+                # Excel with same conditional formatting
                 def create_formatted_excel(df):
                     output = BytesIO()
                     
@@ -167,6 +196,25 @@ if sales_file and inventory_file and pm_file:
                     wb = load_workbook(output)
                     ws = wb['Sales Analysis']
                     
+                    # Freeze header row
+                    ws.freeze_panes = "A2"
+
+                    # Auto-filter on header row
+                    ws.auto_filter.ref = ws.dimensions
+
+                    # Auto column width
+                    for col in ws.columns:
+                        max_length = 0
+                        col_idx = col[0].column
+                        for cell in col:
+                            try:
+                                if cell.value is not None:
+                                    max_length = max(max_length, len(str(cell.value)))
+                            except:
+                                pass
+                        adjusted_width = max_length + 2
+                        ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
+                    
                     # Find DOC column
                     doc_col = None
                     for col in ws[1]:
@@ -175,57 +223,72 @@ if sales_file and inventory_file and pm_file:
                             break
                     
                     if doc_col:
-                        # Define fills (light colors)
-                        red_fill = PatternFill(start_color='FFCCCB', end_color='FFCCCB', fill_type='solid')
-                        yellow_fill = PatternFill(start_color='FFFFE0', end_color='FFFFE0', fill_type='solid')
-                        green_fill = PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
-                        blue_fill = PatternFill(start_color='ADD8E6', end_color='ADD8E6', fill_type='solid')
-                        grey_fill = PatternFill(start_color='D3D3D3', end_color='D3D3D3', fill_type='solid')
-                        white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
-                        black_fill = PatternFill(start_color='808080', end_color='808080', fill_type='solid')
+                        # Dark fills for strong visibility
+                        red_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
+                        orange_fill = PatternFill(start_color='FFA500', end_color='FFA500', fill_type='solid')
+                        green_fill = PatternFill(start_color='008000', end_color='008000', fill_type='solid')
+                        yellow_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+                        skyblue_fill = PatternFill(start_color='87CEEB', end_color='87CEEB', fill_type='solid')
+                        brown_fill = PatternFill(start_color='8B4513', end_color='8B4513', fill_type='solid')
+                        black_fill = PatternFill(start_color='000000', end_color='000000', fill_type='solid')
                         
-                        # Apply conditional formatting
+                        white_font = Font(color="FFFFFF")  # white text for dark backgrounds
+                        black_font = Font(color="000000")  # black text for light backgrounds
+                        
+                        from openpyxl.utils import column_index_from_string
+                        if isinstance(doc_col, str):
+                            doc_col_idx = column_index_from_string(doc_col)
+                        else:
+                            doc_col_idx = doc_col
+                        
                         for row in range(2, ws.max_row + 1):
-                            cell = ws.cell(row=row, column=doc_col)
+                            cell = ws.cell(row=row, column=doc_col_idx)
                             try:
-                                value = float(cell.value) if cell.value else 0
+                                value = float(cell.value) if cell.value is not None else 0
                                 
                                 if 0 <= value < 7:
                                     cell.fill = red_fill
+                                    cell.font = white_font
                                 elif 7 <= value < 15:
-                                    cell.fill = yellow_fill
+                                    cell.fill = orange_fill
+                                    cell.font = white_font
                                 elif 15 <= value < 30:
                                     cell.fill = green_fill
+                                    cell.font = white_font
                                 elif 30 <= value < 45:
-                                    cell.fill = blue_fill
+                                    cell.fill = yellow_fill
+                                    cell.font = black_font
                                 elif 45 <= value < 60:
-                                    cell.fill = grey_fill
+                                    cell.fill = skyblue_fill
+                                    cell.font = black_font
                                 elif 60 <= value < 90:
-                                    cell.fill = white_fill
+                                    cell.fill = brown_fill
+                                    cell.font = white_font
                                 elif value >= 90:
                                     cell.fill = black_fill
+                                    cell.font = white_font
                             except:
                                 pass
                     
                     # Save to BytesIO
-                    output = BytesIO()
-                    wb.save(output)
-                    output.seek(0)
-                    return output
+                    output_final = BytesIO()
+                    wb.save(output_final)
+                    output_final.seek(0)
+                    return output_final
                 
-                # Create download button
+                # Download button
                 excel_data = create_formatted_excel(F_Sales)
                 
                 st.markdown("### 💾 Download Processed File")
                 st.download_button(
-                    label="📥 Download Excel with Conditional Formatting",
+                    label="📥 Download Excel with DOC Conditional Formatting",
                     data=excel_data,
                     file_name="Flipkart_Sales_Analysis_Formatted.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True
                 )
                 
-                # Additional insights
+                # Simple count-based insights (same ranges, no charts)
                 st.markdown("### 📈 Stock Status Insights")
                 col1, col2 = st.columns(2)
                 
@@ -237,7 +300,7 @@ if sales_file and inventory_file and pm_file:
                     st.markdown(f"""
                     **Stock Alerts:**
                     - 🔴 Critical (0-7 days): **{critical_stock} products**
-                    - 🟡 Low (7-15 days): **{low_stock} products**
+                    - 🟠 Low (7-15 days): **{low_stock} products**
                     - 🟢 Optimal (15-30 days): **{optimal_stock} products**
                     """)
                 
@@ -248,9 +311,9 @@ if sales_file and inventory_file and pm_file:
                     
                     st.markdown(f"""
                     **Excess Stock:**
-                    - 🔵 High (30-45 days): **{high_stock} products**
-                    - ⚫ Very High (45-60 days): **{very_high_stock} products**
-                    - ⚪ Excess (60+ days): **{excess_stock} products**
+                    - 🟡 Monitor (30-45 days): **{high_stock} products**
+                    - 🔵 High (45-60 days): **{very_high_stock} products**
+                    - 🟤 Excess (60+ days): **{excess_stock} products**
                     """)
                 
             except Exception as e:
