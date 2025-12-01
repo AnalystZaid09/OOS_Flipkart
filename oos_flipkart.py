@@ -550,10 +550,9 @@ def create_formatted_excel(df):
 # ---------- Helper 2: fill Excel template (DataTable) + DOC formatting ----------
 def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name: str = "DataTable") -> BytesIO:
     """
-    Load an Excel template (xlsx/xlsm) with a table named `table_name` (e.g. DataTable).
+    Load an Excel template (xlsx/xlsm) with a table named `table_name`.
     Replace its header + rows with df and resize the table.
     Also apply DOC color formatting on that sheet.
-    Returns BytesIO of modified workbook.
     """
     import re
 
@@ -561,7 +560,7 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
     table_sheet = None
     table_obj = None
 
-    # Robustly find the table named table_name
+    # Find the table named table_name
     for ws in wb.worksheets:
         tables = getattr(ws, "_tables", None)
         if not tables:
@@ -576,13 +575,12 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
         for tbl in iter_tables:
             name = None
             try:
-                # Table object
                 name = getattr(tbl, "displayName", None) or getattr(tbl, "name", None)
             except Exception:
                 pass
 
             if name is None and isinstance(tbl, str):
-                name = tbl  # just a name string
+                name = tbl
 
             if name == table_name:
                 table_sheet = ws
@@ -877,8 +875,9 @@ if sales_file and inventory_file and pm_file:
                 over_df = over_df[over_df["DOC"] >= 90].copy()
 
                 base_dir = os.path.dirname(__file__)
-                tmpl_xlsm = os.path.join(base_dir, "pivot_template.xlsm")
-                tmpl_xlsx = os.path.join(base_dir, "pivot_template.xlsx")
+                # 🔴 UPDATED TEMPLATE NAMES HERE
+                tmpl_xlsm = os.path.join(base_dir, "flipkart_pivot_template.xlsm")
+                tmpl_xlsx = os.path.join(base_dir, "flipkart_pivot_template.xlsx")
                 template_path = tmpl_xlsm if os.path.exists(tmpl_xlsm) else (tmpl_xlsx if os.path.exists(tmpl_xlsx) else None)
 
                 # ---------- OOS export ----------
@@ -893,7 +892,7 @@ if sales_file and inventory_file and pm_file:
                         if template_path.lower().endswith(".xlsm"):
                             oos_ext = ".xlsm"
                             oos_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
-                        st.success("✅ OOS: Used pivot template — PivotTable & PivotChart (your VBA macro) will build on open.")
+                        st.success("✅ OOS: Used pivot template — your VBA macro will build PivotTable & PivotChart on open.")
                     except Exception:
                         st.warning("⚠️ OOS: Template fill failed, using fallback workbook.")
                         st.code(traceback.format_exc())
@@ -925,7 +924,7 @@ if sales_file and inventory_file and pm_file:
                         if template_path.lower().endswith(".xlsm"):
                             over_ext = ".xlsm"
                             over_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
-                        st.success("✅ Overstock: Used pivot template — PivotTable & PivotChart (your VBA macro) will build on open.")
+                        st.success("✅ Overstock: Used pivot template — your VBA macro will build PivotTable & PivotChart on open.")
                     except Exception:
                         st.warning("⚠️ Overstock: Template fill failed, using fallback workbook.")
                         st.code(traceback.format_exc())
@@ -1002,6 +1001,8 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
+
+
 
 
 
