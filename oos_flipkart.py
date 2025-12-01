@@ -552,7 +552,7 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
     """
     Load an Excel template (xlsx/xlsm) with a table named `table_name` (e.g. DataTable).
     Replace its header + rows with df and resize the table.
-    Also apply DOC conditional-like formatting (same buckets) on that sheet.
+    Also apply DOC color formatting on that sheet.
     Returns BytesIO of modified workbook.
     """
     import re
@@ -582,7 +582,7 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
                 pass
 
             if name is None and isinstance(tbl, str):
-                name = tbl  # in case it's just a name string
+                name = tbl  # just a name string
 
             if name == table_name:
                 table_sheet = ws
@@ -791,7 +791,7 @@ if sales_file and inventory_file and pm_file:
                     cols.insert(sku_pos, bm)
                     F_Sales = F_Sales[cols]
 
-                # 👉 CLEAN Final Sale Units: negative → 0
+                # CLEAN Final Sale Units: negative → 0
                 if "Final Sale Units" in F_Sales.columns:
                     F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
                     F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
@@ -843,7 +843,7 @@ if sales_file and inventory_file and pm_file:
                 with col4:
                     st.metric("Avg DOC", f"{F_Sales['DOC'].mean():.1f} days")
                 
-                # 🔥 Styled DataFrame in app (DOC column colored)
+                # Styled DataFrame in app (DOC column colored)
                 st.markdown("### 📊 Processed Data Preview")
                 if "DOC" in F_Sales.columns:
                     styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
@@ -893,7 +893,7 @@ if sales_file and inventory_file and pm_file:
                         if template_path.lower().endswith(".xlsm"):
                             oos_ext = ".xlsm"
                             oos_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
-                        st.success("✅ OOS: Used pivot template — PivotTable & PivotChart ready in Excel.")
+                        st.success("✅ OOS: Used pivot template — PivotTable & PivotChart (your VBA macro) will build on open.")
                     except Exception:
                         st.warning("⚠️ OOS: Template fill failed, using fallback workbook.")
                         st.code(traceback.format_exc())
@@ -925,7 +925,7 @@ if sales_file and inventory_file and pm_file:
                         if template_path.lower().endswith(".xlsm"):
                             over_ext = ".xlsm"
                             over_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
-                        st.success("✅ Overstock: Used pivot template — PivotTable & PivotChart ready in Excel.")
+                        st.success("✅ Overstock: Used pivot template — PivotTable & PivotChart (your VBA macro) will build on open.")
                     except Exception:
                         st.warning("⚠️ Overstock: Template fill failed, using fallback workbook.")
                         st.code(traceback.format_exc())
@@ -1002,6 +1002,8 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
+
+
 
 
 
