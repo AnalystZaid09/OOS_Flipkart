@@ -441,7 +441,7 @@ def style_doc_column(s):
         elif 15 <= value < 30:
             styles.append('background-color: #008000; color: white;')  # green
         elif 30 <= value < 45:
-            styles.append('background-color: #FFFF00; color: black;')  # yellow (black text better)
+            styles.append('background-color: #FFFF00; color: black;')  # yellow
         elif 45 <= value < 60:
             styles.append('background-color: #87CEEB; color: black;')  # sky blue
         elif 60 <= value < 90:
@@ -449,6 +449,62 @@ def style_doc_column(s):
         else:  # >= 90
             styles.append('background-color: #000000; color: white;')  # black
     return styles
+
+# ----- shared color fills for Excel DOC -----
+DOC_FILLS = {
+    "red": PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid'),
+    "orange": PatternFill(start_color='FFA500', end_color='FFA500', fill_type='solid'),
+    "green": PatternFill(start_color='008000', end_color='008000', fill_type='solid'),
+    "yellow": PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid'),
+    "sky": PatternFill(start_color='87CEEB', end_color='87CEEB', fill_type='solid'),
+    "brown": PatternFill(start_color='8B4513', end_color='8B4513', fill_type='solid'),
+    "black": PatternFill(start_color='000000', end_color='000000', fill_type='solid'),
+}
+WHITE_FONT = Font(color="FFFFFF")
+BLACK_FONT = Font(color="000000")
+
+def apply_doc_color_to_column(ws, header_row_idx: int, col_name: str = "DOC"):
+    """
+    Loop DOC column cells in worksheet ws and apply same color logic as app.
+    """
+    # Find DOC column index
+    header_cells = list(ws.iter_rows(min_row=header_row_idx, max_row=header_row_idx, values_only=False))[0]
+    doc_col_idx = None
+    for idx, cell in enumerate(header_cells, start=1):
+        if cell.value and str(cell.value).strip().lower() == col_name.lower():
+            doc_col_idx = idx
+            break
+    if doc_col_idx is None:
+        return
+
+    max_row = ws.max_row
+    for row in range(header_row_idx + 1, max_row + 1):
+        cell = ws.cell(row=row, column=doc_col_idx)
+        try:
+            v = float(cell.value) if cell.value is not None else 0
+        except (TypeError, ValueError):
+            v = 0
+        if 0 <= v < 7:
+            cell.fill = DOC_FILLS["red"]
+            cell.font = WHITE_FONT
+        elif 7 <= v < 15:
+            cell.fill = DOC_FILLS["orange"]
+            cell.font = WHITE_FONT
+        elif 15 <= v < 30:
+            cell.fill = DOC_FILLS["green"]
+            cell.font = WHITE_FONT
+        elif 30 <= v < 45:
+            cell.fill = DOC_FILLS["yellow"]
+            cell.font = BLACK_FONT
+        elif 45 <= v < 60:
+            cell.fill = DOC_FILLS["sky"]
+            cell.font = BLACK_FONT
+        elif 60 <= v < 90:
+            cell.fill = DOC_FILLS["brown"]
+            cell.font = WHITE_FONT
+        elif v >= 90:
+            cell.fill = DOC_FILLS["black"]
+            cell.font = WHITE_FONT
 
 # ---------- Helper 1: main formatted Excel ----------
 def create_formatted_excel(df):
@@ -482,60 +538,8 @@ def create_formatted_excel(df):
         adjusted_width = max_length + 2
         ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
     
-    # Find DOC column
-    doc_col = None
-    for col in ws[1]:
-        if col.value == 'DOC':
-            doc_col = col.column
-            break
-    
-    if doc_col:
-        # Dark fills for strong visibility
-        red_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
-        orange_fill = PatternFill(start_color='FFA500', end_color='FFA500', fill_type='solid')
-        green_fill = PatternFill(start_color='008000', end_color='008000', fill_type='solid')
-        yellow_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
-        skyblue_fill = PatternFill(start_color='87CEEB', end_color='87CEEB', fill_type='solid')
-        brown_fill = PatternFill(start_color='8B4513', end_color='8B4513', fill_type='solid')
-        black_fill = PatternFill(start_color='000000', end_color='000000', fill_type='solid')
-        
-        white_font = Font(color="FFFFFF")  # white text for dark backgrounds
-        black_font = Font(color="000000")  # black text for light backgrounds
-        
-        from openpyxl.utils import column_index_from_string
-        if isinstance(doc_col, str):
-            doc_col_idx = column_index_from_string(doc_col)
-        else:
-            doc_col_idx = doc_col
-        
-        for row in range(2, ws.max_row + 1):
-            cell = ws.cell(row=row, column=doc_col_idx)
-            try:
-                value = float(cell.value) if cell.value is not None else 0
-                
-                if 0 <= value < 7:
-                    cell.fill = red_fill
-                    cell.font = white_font
-                elif 7 <= value < 15:
-                    cell.fill = orange_fill
-                    cell.font = white_font
-                elif 15 <= value < 30:
-                    cell.fill = green_fill
-                    cell.font = white_font
-                elif 30 <= value < 45:
-                    cell.fill = yellow_fill
-                    cell.font = black_font
-                elif 45 <= value < 60:
-                    cell.fill = skyblue_fill
-                    cell.font = black_font
-                elif 60 <= value < 90:
-                    cell.fill = brown_fill
-                    cell.font = white_font
-                elif value >= 90:
-                    cell.fill = black_fill
-                    cell.font = white_font
-            except:
-                pass
+    # Apply DOC color formatting
+    apply_doc_color_to_column(ws, header_row_idx=1, col_name="DOC")
     
     # Save to BytesIO
     output_final = BytesIO()
@@ -543,11 +547,12 @@ def create_formatted_excel(df):
     output_final.seek(0)
     return output_final
 
-# ---------- Helper 2: fill Excel template (DataTable) ----------
+# ---------- Helper 2: fill Excel template (DataTable) + DOC formatting ----------
 def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name: str = "DataTable") -> BytesIO:
     """
     Load an Excel template (xlsx/xlsm) with a table named `table_name` (e.g. DataTable).
     Replace its header + rows with df and resize the table.
+    Also apply DOC conditional-like formatting (same buckets) on that sheet.
     Returns BytesIO of modified workbook.
     """
     import re
@@ -628,6 +633,9 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
     new_ref = f"{get_column_letter(start_col)}{start_row}:{get_column_letter(new_end_col)}{new_end_row}"
     table_obj.ref = new_ref
 
+    # Apply DOC formatting on this sheet's DOC column
+    apply_doc_color_to_column(table_sheet, header_row_idx=start_row, col_name="DOC")
+
     out = BytesIO()
     wb.save(out)
     out.seek(0)
@@ -637,9 +645,9 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
 def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO:
     """
     Fallback workbook:
-      - Data sheet with df
+      - Data sheet with df (DOC colored)
       - DataTable
-      - PivotSummary (Brand + Product Id → sum DOC & DRR)
+      - PivotSummary (Brand + Product Id → sum DOC & DRR, DOC colored)
       - ChartData + Chart
       - HowToPivot instructions
     """
@@ -690,6 +698,9 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
                 max_len = max(max_len, len(str(cell.value)))
         ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 2
 
+    # Color DOC in Data sheet
+    apply_doc_color_to_column(ws, header_row_idx=1, col_name="DOC")
+
     # Add DataTable
     try:
         max_row = ws.max_row
@@ -706,6 +717,9 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
     if not agg.empty:
         for r in dataframe_to_rows(agg, index=False, header=True):
             ws_pivot.append(r)
+
+        # Color DOC in PivotSummary
+        apply_doc_color_to_column(ws_pivot, header_row_idx=1, col_name="DOC")
 
     # ChartData + Chart
     ws_chartdata = wb.create_sheet("ChartData")
@@ -849,7 +863,7 @@ if sales_file and inventory_file and pm_file:
                     width='stretch'
                 )
 
-                # ----------------- NEW: OOS & Overstock Pivot Exports -----------------
+                # ----------------- OOS & Overstock Pivot Exports -----------------
                 st.markdown("### 📂 OOS & Overstock Excel (with PivotTable + Chart)")
 
                 # OOS: Flipkart Stock == 0
@@ -988,6 +1002,8 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
+
+
 
 
 
