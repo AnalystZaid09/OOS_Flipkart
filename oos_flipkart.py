@@ -376,7 +376,7 @@ st.markdown("---")
 # Sidebar for inputs
 with st.sidebar:
     st.header("⚙️ Configuration")
-    st.markmarkdown("### Enter Number of Days")
+    st.markdown("### Enter Number of Days")
     st.info("📅 Enter the number of days covered in your sales report (e.g., 27 for Nov 1-27)")
     no_of_days = st.number_input(
         "Number of Days in Sales Period:",
@@ -902,4 +902,5 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
+
 
