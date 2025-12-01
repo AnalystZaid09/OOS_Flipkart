@@ -547,26 +547,31 @@ def create_formatted_excel(df):
     output_final.seek(0)
     return output_final
 
-# ---------- Helper 2: fill Excel template (DataTable) + DOC formatting ----------
+# ---------- Helper 2: fill Excel template (DataTable or first table) + DOC formatting ----------
 def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name: str = "DataTable") -> BytesIO:
     """
-    Load an Excel template (xlsx/xlsm) with a table named `table_name`.
-    Replace its header + rows with df and resize the table.
-    Also apply DOC color formatting on that sheet.
+    Load an Excel template (xlsx/xlsm) and fill an Excel Table with `df`.
+
+    Preference:
+    - try to find table named `table_name` (e.g. DataTable)
+    - if not found, fall back to the FIRST table in the workbook
+
+    Also applies DOC cell coloring on the filled sheet.
     """
     import re
 
     wb = load_workbook(template_path, keep_vba=True)
     table_sheet = None
     table_obj = None
+    first_table_sheet = None
+    first_table_obj = None
 
-    # Find the table named table_name
+    # --- find DataTable (preferred) + remember first table as fallback ---
     for ws in wb.worksheets:
         tables = getattr(ws, "_tables", None)
         if not tables:
             continue
 
-        # _tables might be dict or list
         if isinstance(tables, dict):
             iter_tables = list(tables.values())
         else:
@@ -580,8 +585,14 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
                 pass
 
             if name is None and isinstance(tbl, str):
-                name = tbl
+                name = tbl  # in case it's just a name string
 
+            # remember the first table
+            if first_table_obj is None:
+                first_table_obj = tbl
+                first_table_sheet = ws
+
+            # preferred: exact name match
             if name == table_name:
                 table_sheet = ws
                 table_obj = tbl
@@ -590,10 +601,15 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
         if table_obj is not None:
             break
 
+    # if DataTable not found, fall back to first table
     if table_obj is None or table_sheet is None:
-        raise RuntimeError(f"Table '{table_name}' not found in template '{template_path}'")
+        table_obj = first_table_obj
+        table_sheet = first_table_sheet
 
-    # Helper: convert A1 -> (row, col)
+    if table_obj is None or table_sheet is None:
+        raise RuntimeError(f"No Excel tables found in template '{template_path}'")
+
+    # ----- helper: A1 -> (row, col) -----
     def cell_to_rowcol(cell_ref: str):
         m = re.match(r"([A-Z]+)(\d+)$", cell_ref)
         if not m:
@@ -604,13 +620,13 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
             col = col * 26 + (ord(ch) - ord("A") + 1)
         return int(row), col
 
-    # Clear existing table body, write new df
-    ref = table_obj.ref  # e.g. "A1:H200"
+    # ----- clear old data & write df into table range -----
+    ref = table_obj.ref             # e.g. "A1:H200"
     start_cell, end_cell = ref.split(":")
     start_row, start_col = cell_to_rowcol(start_cell)
     end_row, end_col = cell_to_rowcol(end_cell)
 
-    # clear old data rows
+    # clear existing rows below header
     for r in range(start_row + 1, end_row + 1):
         for c in range(start_col, end_col + 1):
             table_sheet.cell(row=r, column=c).value = None
@@ -620,18 +636,18 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
     for idx, col_name in enumerate(header):
         table_sheet.cell(row=start_row, column=start_col + idx, value=col_name)
 
-    # write rows
+    # write data rows
     for r_idx, row in enumerate(df.itertuples(index=False, name=None), start=start_row + 1):
         for c_idx, v in enumerate(row, start=start_col):
             table_sheet.cell(row=r_idx, column=c_idx, value=v)
 
-    # update table ref to new size
+    # resize the table to new df
     new_end_row = start_row + len(df)
     new_end_col = start_col + len(header) - 1
     new_ref = f"{get_column_letter(start_col)}{start_row}:{get_column_letter(new_end_col)}{new_end_row}"
     table_obj.ref = new_ref
 
-    # Apply DOC formatting on this sheet's DOC column
+    # apply DOC formatting to this sheet
     apply_doc_color_to_column(table_sheet, header_row_idx=start_row, col_name="DOC")
 
     out = BytesIO()
@@ -875,7 +891,6 @@ if sales_file and inventory_file and pm_file:
                 over_df = over_df[over_df["DOC"] >= 90].copy()
 
                 base_dir = os.path.dirname(__file__)
-                # 🔴 UPDATED TEMPLATE NAMES HERE
                 tmpl_xlsm = os.path.join(base_dir, "flipkart_pivot_template.xlsm")
                 tmpl_xlsx = os.path.join(base_dir, "flipkart_pivot_template.xlsx")
                 template_path = tmpl_xlsm if os.path.exists(tmpl_xlsm) else (tmpl_xlsx if os.path.exists(tmpl_xlsx) else None)
@@ -1001,6 +1016,8 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
+
+
 
 
 
