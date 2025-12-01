@@ -441,7 +441,7 @@ def style_doc_column(s):
         elif 15 <= value < 30:
             styles.append('background-color: #008000; color: white;')  # green
         elif 30 <= value < 45:
-            styles.append('background-color: #FFFF00; color: black;')  # yellow
+            styles.append('background-color: #FFFF00; color: black;')  # yellow (black text better)
         elif 45 <= value < 60:
             styles.append('background-color: #87CEEB; color: black;')  # sky blue
         elif 60 <= value < 90:
@@ -450,7 +450,7 @@ def style_doc_column(s):
             styles.append('background-color: #000000; color: white;')  # black
     return styles
 
-# ---------- Helper: main formatted Excel ----------
+# ---------- Helper 1: main formatted Excel ----------
 def create_formatted_excel(df):
     output = BytesIO()
     
@@ -463,7 +463,10 @@ def create_formatted_excel(df):
     wb = load_workbook(output)
     ws = wb['Sales Analysis']
     
+    # Freeze header row
     ws.freeze_panes = "A2"
+
+    # Auto-filter on header row
     ws.auto_filter.ref = ws.dimensions
 
     # Auto column width
@@ -476,9 +479,10 @@ def create_formatted_excel(df):
                     max_length = max(max_length, len(str(cell.value)))
             except:
                 pass
-        ws.column_dimensions[get_column_letter(col_idx)].width = max_length + 2
+        adjusted_width = max_length + 2
+        ws.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
     
-    # DOC conditional formatting
+    # Find DOC column
     doc_col = None
     for col in ws[1]:
         if col.value == 'DOC':
@@ -486,6 +490,7 @@ def create_formatted_excel(df):
             break
     
     if doc_col:
+        # Dark fills for strong visibility
         red_fill = PatternFill(start_color='FF0000', end_color='FF0000', fill_type='solid')
         orange_fill = PatternFill(start_color='FFA500', end_color='FFA500', fill_type='solid')
         green_fill = PatternFill(start_color='008000', end_color='008000', fill_type='solid')
@@ -494,8 +499,8 @@ def create_formatted_excel(df):
         brown_fill = PatternFill(start_color='8B4513', end_color='8B4513', fill_type='solid')
         black_fill = PatternFill(start_color='000000', end_color='000000', fill_type='solid')
         
-        white_font = Font(color="FFFFFF")
-        black_font = Font(color="000000")
+        white_font = Font(color="FFFFFF")  # white text for dark backgrounds
+        black_font = Font(color="000000")  # black text for light backgrounds
         
         from openpyxl.utils import column_index_from_string
         if isinstance(doc_col, str):
@@ -507,82 +512,117 @@ def create_formatted_excel(df):
             cell = ws.cell(row=row, column=doc_col_idx)
             try:
                 value = float(cell.value) if cell.value is not None else 0
+                
                 if 0 <= value < 7:
-                    cell.fill = red_fill;      cell.font = white_font
+                    cell.fill = red_fill
+                    cell.font = white_font
                 elif 7 <= value < 15:
-                    cell.fill = orange_fill;   cell.font = white_font
+                    cell.fill = orange_fill
+                    cell.font = white_font
                 elif 15 <= value < 30:
-                    cell.fill = green_fill;    cell.font = white_font
+                    cell.fill = green_fill
+                    cell.font = white_font
                 elif 30 <= value < 45:
-                    cell.fill = yellow_fill;   cell.font = black_font
+                    cell.fill = yellow_fill
+                    cell.font = black_font
                 elif 45 <= value < 60:
-                    cell.fill = skyblue_fill;  cell.font = black_font
+                    cell.fill = skyblue_fill
+                    cell.font = black_font
                 elif 60 <= value < 90:
-                    cell.fill = brown_fill;    cell.font = white_font
+                    cell.fill = brown_fill
+                    cell.font = white_font
                 elif value >= 90:
-                    cell.fill = black_fill;    cell.font = white_font
+                    cell.fill = black_fill
+                    cell.font = white_font
             except:
                 pass
     
+    # Save to BytesIO
     output_final = BytesIO()
     wb.save(output_final)
     output_final.seek(0)
     return output_final
 
-# ---------- Helper: fill existing Pivot template ----------
+# ---------- Helper 2: fill Excel template (DataTable) ----------
 def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name: str = "DataTable") -> BytesIO:
     """
-    Template must contain an Excel Table named `table_name` that your PivotTable and PivotChart use.
-    This function replaces the table's data with df (header + rows) and resizes the table.
+    Load an Excel template (xlsx/xlsm) with a table named `table_name` (e.g. DataTable).
+    Replace its header + rows with df and resize the table.
+    Returns BytesIO of modified workbook.
     """
+    import re
+
     wb = load_workbook(template_path, keep_vba=True)
     table_sheet = None
     table_obj = None
 
-    # find table
+    # Robustly find the table named table_name
     for ws in wb.worksheets:
-        for tbl in ws._tables:
-            if tbl.displayName == table_name:
+        tables = getattr(ws, "_tables", None)
+        if not tables:
+            continue
+
+        # _tables might be dict or list
+        if isinstance(tables, dict):
+            iter_tables = list(tables.values())
+        else:
+            iter_tables = list(tables)
+
+        for tbl in iter_tables:
+            name = None
+            try:
+                # Table object
+                name = getattr(tbl, "displayName", None) or getattr(tbl, "name", None)
+            except Exception:
+                pass
+
+            if name is None and isinstance(tbl, str):
+                name = tbl  # in case it's just a name string
+
+            if name == table_name:
                 table_sheet = ws
                 table_obj = tbl
                 break
-        if table_obj:
+
+        if table_obj is not None:
             break
 
-    if table_obj is None:
-        raise RuntimeError(f"Table {table_name} not found in template.")
+    if table_obj is None or table_sheet is None:
+        raise RuntimeError(f"Table '{table_name}' not found in template '{template_path}'")
 
-    # helper to decode A1 -> row/col
-    import re
-    def cell_to_rowcol(cell):
-        m = re.match(r"([A-Z]+)(\d+)", cell)
+    # Helper: convert A1 -> (row, col)
+    def cell_to_rowcol(cell_ref: str):
+        m = re.match(r"([A-Z]+)(\d+)$", cell_ref)
         if not m:
-            raise RuntimeError("Unexpected table ref format")
+            raise RuntimeError(f"Unexpected table ref format: {cell_ref}")
         col_letters, row = m.groups()
         col = 0
         for ch in col_letters:
-            col = col * 26 + (ord(ch) - ord('A') + 1)
+            col = col * 26 + (ord(ch) - ord("A") + 1)
         return int(row), col
 
-    ref = table_obj.ref
+    # Clear existing table body, write new df
+    ref = table_obj.ref  # e.g. "A1:H200"
     start_cell, end_cell = ref.split(":")
     start_row, start_col = cell_to_rowcol(start_cell)
     end_row, end_col = cell_to_rowcol(end_cell)
 
-    # clear old data
+    # clear old data rows
     for r in range(start_row + 1, end_row + 1):
         for c in range(start_col, end_col + 1):
             table_sheet.cell(row=r, column=c).value = None
 
-    # write new header + rows
+    # write header
     header = list(df.columns)
     for idx, col_name in enumerate(header):
         table_sheet.cell(row=start_row, column=start_col + idx, value=col_name)
 
+    # write rows
     for r_idx, row in enumerate(df.itertuples(index=False, name=None), start=start_row + 1):
         for c_idx, v in enumerate(row, start=start_col):
             table_sheet.cell(row=r_idx, column=c_idx, value=v)
 
+    # update table ref to new size
     new_end_row = start_row + len(df)
     new_end_col = start_col + len(header) - 1
     new_ref = f"{get_column_letter(start_col)}{start_row}:{get_column_letter(new_end_col)}{new_end_row}"
@@ -593,14 +633,15 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
     out.seek(0)
     return out
 
-# ---------- Helper: fallback workbook with summary + normal chart ----------
+# ---------- Helper 3: fallback workbook with PivotSummary + Chart ----------
 def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO:
     """
-    Fallback when template not available:
-      - Data sheet
-      - PivotSummary (Brand + Product Id)
+    Fallback workbook:
+      - Data sheet with df
+      - DataTable
+      - PivotSummary (Brand + Product Id → sum DOC & DRR)
       - ChartData + Chart
-      - HowToPivot sheet
+      - HowToPivot instructions
     """
     working = df.copy()
 
@@ -608,11 +649,23 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
         working["DOC"] = pd.to_numeric(working["DOC"], errors="coerce")
         working = working.sort_values(by="DOC", ascending=False)
 
+    if "DRR" in working.columns:
+        working["DRR"] = pd.to_numeric(working["DRR"], errors="coerce")
+
+    # Aggregate for summary
     if "Brand" in working.columns and "Product Id" in working.columns:
-        agg = working.groupby(["Brand", "Product Id"], dropna=False)[["DOC", "DRR"]].sum().reset_index()
+        agg = (
+            working.groupby(["Brand", "Product Id"], dropna=False)[["DOC", "DRR"]]
+            .sum()
+            .reset_index()
+        )
         agg["Brand_Parent"] = agg["Brand"].astype(str) + " | " + agg["Product Id"].astype(str)
     elif "Brand" in working.columns:
-        agg = working.groupby(["Brand"], dropna=False)[["DOC", "DRR"]].sum().reset_index()
+        agg = (
+            working.groupby(["Brand"], dropna=False)[["DOC", "DRR"]]
+            .sum()
+            .reset_index()
+        )
         agg["Brand_Parent"] = agg["Brand"].astype(str)
     else:
         agg = pd.DataFrame(columns=["Brand_Parent", "DOC", "DRR"])
@@ -621,12 +674,14 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
     ws = wb.active
     ws.title = sheet_name
 
+    # Data sheet
     for r in dataframe_to_rows(working, index=False, header=True):
         ws.append(r)
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
 
+    # Auto column width
     for col in ws.columns:
         max_len = 0
         col_idx = col[0].column
@@ -635,7 +690,7 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
                 max_len = max(max_len, len(str(cell.value)))
         ws.column_dimensions[get_column_letter(col_idx)].width = max_len + 2
 
-    # add DataTable
+    # Add DataTable
     try:
         max_row = ws.max_row
         max_col = ws.max_column
@@ -646,10 +701,11 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
     except Exception:
         pass
 
-    # PivotSummary
+    # PivotSummary sheet
     ws_pivot = wb.create_sheet("PivotSummary")
-    for r in dataframe_to_rows(agg, index=False, header=True):
-        ws_pivot.append(r)
+    if not agg.empty:
+        for r in dataframe_to_rows(agg, index=False, header=True):
+            ws_pivot.append(r)
 
     # ChartData + Chart
     ws_chartdata = wb.create_sheet("ChartData")
@@ -664,27 +720,27 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str) -> BytesIO
             chart.add_data(vals1, titles_from_data=False)
             chart.add_data(vals2, titles_from_data=False)
             chart.set_categories(cats)
-            chart.title = f"Sum DOC and DRR by Brand + Product Id ({sheet_name})"
+            chart.title = f"Sum DOC and DRR by Brand + Product ({sheet_name})"
             ws_chart = wb.create_sheet("Chart")
             ws_chart.add_chart(chart, "A1")
 
     # HowToPivot sheet
     ws_how = wb.create_sheet("HowToPivot")
-    ws_how.append([f"How to create PivotTable + PivotChart like template ({sheet_name})"])
+    ws_how.append([f"How to create PivotTable + PivotChart ({sheet_name})"])
     ws_how.append([])
-    ws_how.append(["1) Insert → PivotTable using the table 'DataTable' on sheet " + sheet_name])
+    ws_how.append(["1) Insert → PivotTable using table 'DataTable' on sheet " + sheet_name])
     ws_how.append(["2) Put 'Brand' in Rows, then 'Product Id' under it."])
-    ws_how.append(["3) Put 'DOC' and 'DRR' in Values (Sum)."])
-    ws_how.append(["4) Insert → PivotChart from that PivotTable."])
+    ws_how.append(["3) Put 'DOC' and 'DRR' into Values as Sum."])
+    ws_how.append(["4) Insert → PivotChart from PivotTable."])
 
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf
 
-# ---------------- Process button ----------------
+# ------------------------- MAIN PROCESS BUTTON -------------------------
 if sales_file and inventory_file and pm_file:
-    if st.button("🚀 Process Data", type="primary"):
+    if st.button("🚀 Process Data", type="primary", width='stretch'):
         with st.spinner("Processing your data..."):
             try:
                 # Read files
@@ -711,6 +767,7 @@ if sales_file and inventory_file and pm_file:
                     if 'Brand_x' in F_Sales.columns:
                         F_Sales.drop(columns=['Brand_x'], inplace=True)
                 
+                # Reorder columns
                 cols = F_Sales.columns.tolist()
                 if 'Brand Manager' in cols and 'Brand' in cols and 'SKU ID' in cols:
                     bm = cols.pop(cols.index('Brand Manager'))
@@ -719,9 +776,17 @@ if sales_file and inventory_file and pm_file:
                     cols.insert(sku_pos, br)
                     cols.insert(sku_pos, bm)
                     F_Sales = F_Sales[cols]
+
+                # 👉 CLEAN Final Sale Units: negative → 0
+                if "Final Sale Units" in F_Sales.columns:
+                    F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
+                    F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
                 
-                # DRR
-                F_Sales["DRR"] = (F_Sales["Final Sale Units"] / no_of_days).round(2)
+                # Calculate DRR using cleaned Final Sale Units
+                if "Final Sale Units" in F_Sales.columns:
+                    F_Sales["DRR"] = (F_Sales["Final Sale Units"] / no_of_days).round(2)
+                else:
+                    F_Sales["DRR"] = 0
                 
                 # Merge with Inventory
                 F_Sales = F_Sales.merge(
@@ -733,7 +798,7 @@ if sales_file and inventory_file and pm_file:
                 F_Sales.rename(columns={'System Stock count': 'Flipkart Stock'}, inplace=True)
                 F_Sales.drop(columns=['Flipkart Serial Number'], inplace=True)
                 
-                # DOC
+                # Calculate DOC
                 F_Sales["Flipkart Stock"] = pd.to_numeric(F_Sales["Flipkart Stock"], errors="coerce")
                 F_Sales["DRR"] = pd.to_numeric(F_Sales["DRR"], errors="coerce")
                 
@@ -742,22 +807,29 @@ if sales_file and inventory_file and pm_file:
                     F_Sales["Flipkart Stock"] / F_Sales["DRR"],
                     np.nan
                 )
-                F_Sales["DOC"] = F_Sales["DOC"].round(2).fillna(0)
+                F_Sales["DOC"] = F_Sales["DOC"].round(2)
+                F_Sales["DOC"] = F_Sales["DOC"].fillna(0)
                 
                 st.success("✅ Data processed successfully!")
                 
-                # Metrics
+                # Summary metrics
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total Products", len(F_Sales))
                 with col2:
-                    st.metric("Total Final Sale Units", int(F_Sales["Final Sale Units"].sum()))
+                    if "Final Sale Units" in F_Sales.columns:
+                        st.metric("Total Final Sale Units", int(F_Sales["Final Sale Units"].sum()))
+                    else:
+                        st.metric("Total Final Sale Units", "N/A")
                 with col3:
-                    st.metric("Total GMV", f"₹{F_Sales['Final Sale Amount'].sum():,.0f}")
+                    if "Final Sale Amount" in F_Sales.columns:
+                        st.metric("Total GMV", f"₹{F_Sales['Final Sale Amount'].sum():,.0f}")
+                    else:
+                        st.metric("Total GMV", "N/A")
                 with col4:
                     st.metric("Avg DOC", f"{F_Sales['DOC'].mean():.1f} days")
                 
-                # Preview
+                # 🔥 Styled DataFrame in app (DOC column colored)
                 st.markdown("### 📊 Processed Data Preview")
                 if "DOC" in F_Sales.columns:
                     styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
@@ -765,89 +837,101 @@ if sales_file and inventory_file and pm_file:
                 else:
                     st.dataframe(F_Sales, width='stretch', height=400)
                 
-                # Main full export
+                # MAIN processed full Excel (no filters)
                 excel_data = create_formatted_excel(F_Sales)
+                
                 st.markdown("### 💾 Download Processed File")
                 st.download_button(
                     label="📥 Download Excel with DOC Conditional Formatting",
                     data=excel_data,
                     file_name="Flipkart_Sales_Analysis_Formatted.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width='stretch'
                 )
-                
-                # ---------------- OOS & Overstock with Pivot ----------------
-                st.markdown("### 📂 OOS & Overstock Files (with PivotTable & PivotChart-style)")
 
-                # Filter OOS (Flipkart Stock == 0)
+                # ----------------- NEW: OOS & Overstock Pivot Exports -----------------
+                st.markdown("### 📂 OOS & Overstock Excel (with PivotTable + Chart)")
+
+                # OOS: Flipkart Stock == 0
                 oos_df = F_Sales.copy()
                 oos_df["Flipkart Stock"] = pd.to_numeric(oos_df["Flipkart Stock"], errors="coerce").fillna(0)
                 oos_df = oos_df[oos_df["Flipkart Stock"] == 0].copy()
 
-                # Filter Overstock (DOC >= 90)
+                # Overstock: DOC >= 90
                 over_df = F_Sales.copy()
                 over_df["DOC"] = pd.to_numeric(over_df["DOC"], errors="coerce")
                 over_df = over_df[over_df["DOC"] >= 90].copy()
 
                 base_dir = os.path.dirname(__file__)
-                tmpl_xlsm = os.path.join(base_dir, "flipkart_pivot_template.xlsm")
-                tmpl_xlsx = os.path.join(base_dir, "flipkart_pivot_template.xlsx")
+                tmpl_xlsm = os.path.join(base_dir, "pivot_template.xlsm")
+                tmpl_xlsx = os.path.join(base_dir, "pivot_template.xlsx")
                 template_path = tmpl_xlsm if os.path.exists(tmpl_xlsm) else (tmpl_xlsx if os.path.exists(tmpl_xlsx) else None)
 
-                # ---- OOS file ----
+                # ---------- OOS export ----------
                 oos_bytes = None
+                oos_ext = ".xlsx"
+                oos_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
                 if template_path:
                     try:
                         buf_oos = fill_template_and_get_bytes(template_path, oos_df, table_name="DataTable")
                         oos_bytes = buf_oos.getvalue()
-                        st.success("✅ OOS: Used pivot template — PivotTable & PivotChart will be available in Excel.")
-                        oos_ext = ".xlsm" if template_path.lower().endswith(".xlsm") else ".xlsx"
-                        oos_mime = "application/vnd.ms-excel.sheet.macroEnabled.12" if oos_ext == ".xlsm" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        if template_path.lower().endswith(".xlsm"):
+                            oos_ext = ".xlsm"
+                            oos_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
+                        st.success("✅ OOS: Used pivot template — PivotTable & PivotChart ready in Excel.")
                     except Exception:
                         st.warning("⚠️ OOS: Template fill failed, using fallback workbook.")
                         st.code(traceback.format_exc())
-                
+
                 if oos_bytes is None:
-                    fallback_oos = create_pivot_fallback_workbook(oos_df, sheet_name="OOS")
-                    oos_bytes = fallback_oos.getvalue()
+                    fb_oos = create_pivot_fallback_workbook(oos_df, sheet_name="OOS")
+                    oos_bytes = fb_oos.getvalue()
                     oos_ext = ".xlsx"
                     oos_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    st.info("ℹ️ OOS fallback workbook generated (DataTable + PivotSummary + ChartData + HowToPivot).")
 
                 st.download_button(
-                    label="📥 Download OOS File (Stock = 0, with Pivot structure)",
+                    label="📥 Download OOS Excel (Flipkart Stock = 0)",
                     data=oos_bytes,
                     file_name=f"Flipkart_OOS_with_Pivot{oos_ext}",
                     mime=oos_mime,
                     key="oos_download",
                 )
 
-                # ---- Overstock file ----
+                # ---------- Overstock export ----------
                 over_bytes = None
+                over_ext = ".xlsx"
+                over_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
                 if template_path:
                     try:
                         buf_over = fill_template_and_get_bytes(template_path, over_df, table_name="DataTable")
                         over_bytes = buf_over.getvalue()
-                        st.success("✅ Overstock: Used pivot template — PivotTable & PivotChart will be available in Excel.")
-                        over_ext = ".xlsm" if template_path.lower().endswith(".xlsm") else ".xlsx"
-                        over_mime = "application/vnd.ms-excel.sheet.macroEnabled.12" if over_ext == ".xlsm" else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        if template_path.lower().endswith(".xlsm"):
+                            over_ext = ".xlsm"
+                            over_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
+                        st.success("✅ Overstock: Used pivot template — PivotTable & PivotChart ready in Excel.")
                     except Exception:
                         st.warning("⚠️ Overstock: Template fill failed, using fallback workbook.")
                         st.code(traceback.format_exc())
-                
+
                 if over_bytes is None:
-                    fallback_over = create_pivot_fallback_workbook(over_df, sheet_name="Overstock")
-                    over_bytes = fallback_over.getvalue()
+                    fb_over = create_pivot_fallback_workbook(over_df, sheet_name="Overstock")
+                    over_bytes = fb_over.getvalue()
                     over_ext = ".xlsx"
                     over_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    st.info("ℹ️ Overstock fallback workbook generated (DataTable + PivotSummary + ChartData + HowToPivot).")
 
                 st.download_button(
-                    label="📥 Download Overstock File (DOC ≥ 90, with Pivot structure)",
+                    label="📥 Download Overstock Excel (DOC ≥ 90)",
                     data=over_bytes,
                     file_name=f"Flipkart_Overstock_with_Pivot{over_ext}",
                     mime=over_mime,
-                    key="overstock_download",
+                    key="over_download",
                 )
-
-                # Insights
+                
+                # Simple count-based insights (same ranges, no charts)
                 st.markdown("### 📈 Stock Status Insights")
                 col1, col2 = st.columns(2)
                 
@@ -887,8 +971,10 @@ else:
         
         1. **Flipkart Sales Report**: 
            - Should contain: Product Id, SKU ID, Category, Brand, Vertical, Order Date, etc.
+           
         2. **Inventory Listing**: 
            - Should contain: Flipkart Serial Number, System Stock count, etc.
+           
         3. **Product Master**: 
            - Should contain: FNS, Brand Manager, Brand, etc.
         
@@ -902,5 +988,7 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
+
+
 
 
