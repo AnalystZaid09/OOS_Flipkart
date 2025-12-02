@@ -547,14 +547,15 @@ def create_formatted_excel(df):
     output_final.seek(0)
     return output_final
 
-# ---------- Helper 2: fill Excel template (DataTable or first table) + DOC formatting ----------
+# ---------- Helper 2: fill template (DataTable or first table or create new) ----------
 def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name: str = "DataTable") -> BytesIO:
     """
     Load an Excel template (xlsx/xlsm) and fill an Excel Table with `df`.
 
-    Preference:
-    - try to find table named `table_name` (e.g. DataTable)
-    - if not found, fall back to the FIRST table in the workbook
+    Priority:
+    1) Try table named `table_name` (e.g. DataTable)
+    2) If not found but some table exists, use the first table
+    3) If no tables at all, create a new sheet 'Data', write df, and create a new table `table_name`.
 
     Also applies DOC cell coloring on the filled sheet.
     """
@@ -566,7 +567,7 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
     first_table_sheet = None
     first_table_obj = None
 
-    # --- find DataTable (preferred) + remember first table as fallback ---
+    # --- scan all sheets for tables ---
     for ws in wb.worksheets:
         tables = getattr(ws, "_tables", None)
         if not tables:
@@ -587,7 +588,7 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
             if name is None and isinstance(tbl, str):
                 name = tbl  # in case it's just a name string
 
-            # remember the first table
+            # remember the first table in the whole file
             if first_table_obj is None:
                 first_table_obj = tbl
                 first_table_sheet = ws
@@ -601,13 +602,43 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
         if table_obj is not None:
             break
 
-    # if DataTable not found, fall back to first table
-    if table_obj is None or table_sheet is None:
+    # CASE 1: some table exists but DataTable not found → use first table
+    if table_obj is None and first_table_obj is not None:
         table_obj = first_table_obj
         table_sheet = first_table_sheet
 
+    # CASE 2: no tables at all → create new sheet + table
     if table_obj is None or table_sheet is None:
-        raise RuntimeError(f"No Excel tables found in template '{template_path}'")
+        # choose or create a sheet named "Data"
+        sheet_name = "Data"
+        if sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            # clear existing content
+            ws.delete_rows(1, ws.max_row)
+        else:
+            ws = wb.create_sheet(sheet_name)
+
+        # write header + rows
+        header = list(df.columns)
+        ws.append(header)
+        for row in df.itertuples(index=False, name=None):
+            ws.append(list(row))
+
+        # define table ref
+        max_row = ws.max_row
+        max_col = ws.max_column
+        ref = f"A1:{get_column_letter(max_col)}{max_row}"
+        table = Table(displayName=table_name, ref=ref)
+        table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium9", showRowStripes=True)
+        ws.add_table(table)
+
+        # apply DOC coloring
+        apply_doc_color_to_column(ws, header_row_idx=1, col_name="DOC")
+
+        out = BytesIO()
+        wb.save(out)
+        out.seek(0)
+        return out
 
     # ----- helper: A1 -> (row, col) -----
     def cell_to_rowcol(cell_ref: str):
@@ -620,7 +651,7 @@ def fill_template_and_get_bytes(template_path: str, df: pd.DataFrame, table_name
             col = col * 26 + (ord(ch) - ord("A") + 1)
         return int(row), col
 
-    # ----- clear old data & write df into table range -----
+    # ----- clear old data & write df into existing table range -----
     ref = table_obj.ref             # e.g. "A1:H200"
     start_cell, end_cell = ref.split(":")
     start_row, start_col = cell_to_rowcol(start_cell)
@@ -1016,15 +1047,4 @@ st.markdown("""
     <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
-
-
-
-
-
-
-
-
-
-
-
 
