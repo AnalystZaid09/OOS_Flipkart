@@ -541,30 +541,13 @@ if sales_file and inventory_file and pm_file:
                 F_Sales.rename(columns={'System Stock count': 'Flipkart Stock'}, inplace=True)
                 F_Sales.drop(columns=['Flipkart Serial Number'], errors='ignore', inplace=True)
 
-                # ----------------- AGGREGATE DUPLICATES AFTER INVENTORY MERGE -----------------
-                # Sum Final Sale Units/Amount, take max Flipkart Stock, keep first for others
+                # ----------------- POST-MERGE DEDUPE: keep FIRST for all columns -----------------
                 if isinstance(F_Sales, pd.DataFrame) and 'Product Id' in F_Sales.columns:
                     post_dup_count = int(F_Sales.duplicated(subset=['Product Id']).sum())
                     if post_dup_count > 0:
-                        # Build aggregation rules based on available columns
-                        agg_rules = {}
-                        if 'Final Sale Units' in F_Sales.columns:
-                            agg_rules['Final Sale Units'] = 'sum'
-                        if 'Final Sale Amount' in F_Sales.columns:
-                            agg_rules['Final Sale Amount'] = 'sum'
-                        if 'Flipkart Stock' in F_Sales.columns:
-                            agg_rules['Flipkart Stock'] = 'max'
-                        # For any other column (except Product Id) take first occurrence
-                        other_cols = [c for c in F_Sales.columns if c not in (['Product Id'] + list(agg_rules.keys()))]
-                        for c in other_cols:
-                            agg_rules[c] = 'first'
-                        # Group & aggregate
-                        F_Sales = (
-                            F_Sales.groupby('Product Id', dropna=False, as_index=False)
-                            .agg(agg_rules)
-                        )
-                        st.info(f"🔀 Aggregated {post_dup_count} duplicate Product Id row(s): summed units/amounts, took max stock, kept first for other columns.")
-                # ---------------------------------------------------------------------------
+                        F_Sales = F_Sales.drop_duplicates(subset=['Product Id'], keep='first').reset_index(drop=True)
+                        st.info(f"🧾 Kept first row for each Product Id and removed {post_dup_count} duplicate row(s) (no aggregation).")
+                # ------------------------------------------------------------------------------
 
                 # Calculate DOC
                 F_Sales["Flipkart Stock"] = pd.to_numeric(F_Sales["Flipkart Stock"], errors="coerce")
