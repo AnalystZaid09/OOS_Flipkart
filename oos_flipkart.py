@@ -481,38 +481,14 @@ if sales_file and inventory_file and pm_file:
                 else:
                     st.warning("⚠️ F_Sales is not a DataFrame — cannot remove columns.")
 
-                # Ensure Final Sale Units numeric before aggregation
+                # Ensure Final Sale Units numeric (no aggregation / no duplicate dropping)
                 if isinstance(F_Sales, pd.DataFrame) and "Final Sale Units" in F_Sales.columns:
                     F_Sales["Final Sale Units"] = pd.to_numeric(
                         F_Sales["Final Sale Units"], errors="coerce"
                     ).fillna(0)
 
-                # ------- GROUP DUPLICATES BY Product Id (+ SKU ID if present) & SUM Final Sale Units --------
-                if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
-                    group_cols = ["Product Id"]
-                    if "SKU ID" in F_Sales.columns:
-                        group_cols.append("SKU ID")  # keep different SKUs separate
-
-                    dup_count = int(F_Sales.duplicated(subset=group_cols).sum())
-                    if dup_count > 0:
-                        st.info(f"🔁 Duplicates found on {', '.join(group_cols)} — combining rows and summing Final Sale Units")
-
-                        agg_dict = {}
-                        for col in F_Sales.columns:
-                            if col == "Final Sale Units":
-                                agg_dict[col] = "sum"
-                            elif col not in group_cols:
-                                agg_dict[col] = "first"
-
-                        F_Sales = F_Sales.groupby(group_cols, as_index=False).agg(agg_dict)
-                        st.success(f"🧮 Aggregated {dup_count} duplicate rows (Final Sale Units summed by {', '.join(group_cols)}).")
-                    else:
-                        st.info("ℹ️ No duplicate Product Id / SKU ID combinations found to aggregate.")
-                else:
-                    if isinstance(F_Sales, pd.DataFrame):
-                        st.warning("⚠️ 'Product Id' column not found — aggregation skipped.")
-
-                # (No dropping on SKU ID — only grouping exact dupes above)
+                # NOTE: No drop_duplicates / no groupby here.
+                # All rows from the original sales file are preserved.
 
                 # Remove header row from Inventory if present
                 if Inventory.iloc[0].astype(str).str.contains('Title of your product').any():
@@ -543,7 +519,7 @@ if sales_file and inventory_file and pm_file:
                     cols.insert(sku_pos, bm)
                     F_Sales = F_Sales[cols]
 
-                # CLEAN Final Sale Units: negative → 0 (after aggregation)
+                # CLEAN Final Sale Units: negative → 0
                 if "Final Sale Units" in F_Sales.columns:
                     F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
                     F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
