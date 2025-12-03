@@ -466,10 +466,10 @@ if sales_file and inventory_file and pm_file:
                 PM = pd.read_excel(pm_file)
 
                 # ------------------ ADDITION (do NOT modify existing code) ------------------
-                # Immediately remove columns if present (case-insensitive) and then remove duplicate Product Id rows
+                # Immediately remove specific columns if present (case-insensitive) and then remove duplicate Product Id rows
                 try:
                     # Remove the three columns right away (match case-insensitively)
-                    cols_to_drop = ['Order Date', 'Fulfillment type', 'Location']
+                    cols_to_drop = ['Order Date', 'Fulfillment type', 'Location Id']
                     if isinstance(F_Sales, pd.DataFrame):
                         # build mapping of lowercase col -> actual col name to preserve original names
                         lower_map = {c.lower(): c for c in F_Sales.columns}
@@ -478,7 +478,7 @@ if sales_file and inventory_file and pm_file:
                             F_Sales = F_Sales.drop(columns=found, errors='ignore')
                             st.info(f"✅ Removed columns from sales file: {', '.join(found)}")
                         else:
-                            st.info("ℹ️ None of the specified columns ('Order Date', 'Fulfillment type', 'Location') were present in sales file.")
+                            st.info("ℹ️ None of the specified columns ('Order Date', 'Fulfillment type', 'Location Id') were present in sales file.")
                     else:
                         st.warning("⚠️ F_Sales is not a DataFrame; skip dropping columns.")
 
