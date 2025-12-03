@@ -487,34 +487,32 @@ if sales_file and inventory_file and pm_file:
                         F_Sales["Final Sale Units"], errors="coerce"
                     ).fillna(0)
 
-                # ------- GROUP DUPLICATE PRODUCT ID & SUM Final Sale Units --------
+                # ------- GROUP DUPLICATES BY Product Id (+ SKU ID if present) & SUM Final Sale Units --------
                 if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
-                    dup_count_pid = int(F_Sales.duplicated(subset=["Product Id"]).sum())
-                    if dup_count_pid > 0:
-                        st.info("🔁 Duplicate Product Id found — combining rows and summing Final Sale Units")
+                    group_cols = ["Product Id"]
+                    if "SKU ID" in F_Sales.columns:
+                        group_cols.append("SKU ID")  # keep different SKUs separate
+
+                    dup_count = int(F_Sales.duplicated(subset=group_cols).sum())
+                    if dup_count > 0:
+                        st.info(f"🔁 Duplicates found on {', '.join(group_cols)} — combining rows and summing Final Sale Units")
+
                         agg_dict = {}
                         for col in F_Sales.columns:
                             if col == "Final Sale Units":
                                 agg_dict[col] = "sum"
-                            elif col != "Product Id":
+                            elif col not in group_cols:
                                 agg_dict[col] = "first"
 
-                        F_Sales = F_Sales.groupby("Product Id", as_index=False).agg(agg_dict)
-                        st.success(f"🧮 Aggregated {dup_count_pid} duplicate Product Id rows (Final Sale Units summed).")
+                        F_Sales = F_Sales.groupby(group_cols, as_index=False).agg(agg_dict)
+                        st.success(f"🧮 Aggregated {dup_count} duplicate rows (Final Sale Units summed by {', '.join(group_cols)}).")
                     else:
-                        st.info("ℹ️ No duplicate Product Id values found to aggregate.")
+                        st.info("ℹ️ No duplicate Product Id / SKU ID combinations found to aggregate.")
                 else:
                     if isinstance(F_Sales, pd.DataFrame):
-                        st.warning("⚠️ 'Product Id' column not found — Product Id aggregation skipped.")
+                        st.warning("⚠️ 'Product Id' column not found — aggregation skipped.")
 
-                # ------- NOTE: SKU ID duplicates are allowed and kept --------
-                if isinstance(F_Sales, pd.DataFrame) and "SKU ID" in F_Sales.columns:
-                    dup_sku_count = int(F_Sales.duplicated(subset=["SKU ID"]).sum())
-                    if dup_sku_count > 0:
-                        st.info(f"ℹ️ Found {dup_sku_count} duplicate SKU IDs — keeping all rows (no deletion).")
-                else:
-                    if isinstance(F_Sales, pd.DataFrame):
-                        st.warning("⚠️ 'SKU ID' column not found — cannot check SKU duplicates.")
+                # (No dropping on SKU ID — only grouping exact dupes above)
 
                 # Remove header row from Inventory if present
                 if Inventory.iloc[0].astype(str).str.contains('Title of your product').any():
