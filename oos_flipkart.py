@@ -457,7 +457,7 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str, sort_ascen
 
 # ------------------------- PROCESS DATA BUTTON -------------------------
 if sales_file and inventory_file and pm_file:
-    if st.button("🚀 Process Data", type="primary", use_container_width=True):
+    if st.button("🚀 Process Data", type="primary", width="stretch"):
         with st.spinner("Processing your data..."):
             try:
                 # Read files
@@ -672,9 +672,9 @@ if "F_Sales_df" in st.session_state:
     st.markdown("### 📊 Processed Data Preview")
     if "DOC" in F_Sales.columns:
         styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
-        st.dataframe(styled_df, height=400, use_container_width=True)
+        st.dataframe(styled_df, height=400, width="stretch")
     else:
-        st.dataframe(F_Sales, height=400, use_container_width=True)
+        st.dataframe(F_Sales, height=400, width="stretch")
 
     st.markdown("---")
     st.header("💾 Download Files")
@@ -689,7 +689,7 @@ if "F_Sales_df" in st.session_state:
             file_name="Flipkart_Sales_Analysis_Formatted.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="main_download",
-            use_container_width=True
+            width="stretch"
         )
 
     with colB:
@@ -700,7 +700,7 @@ if "F_Sales_df" in st.session_state:
             file_name=f"Flipkart_OOS_with_Pivot{st.session_state['oos_ext']}",
             mime=st.session_state["oos_mime"],
             key="oos_download_btn",
-            use_container_width=True
+            width="stretch"
         )
 
     with colC:
@@ -711,7 +711,7 @@ if "F_Sales_df" in st.session_state:
             file_name=f"Flipkart_Overstock_with_Pivot{st.session_state['over_ext']}",
             mime=st.session_state["over_mime"],
             key="over_download_btn",
-            use_container_width=True
+            width="stretch"
         )
 
     st.markdown("---")
