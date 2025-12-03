@@ -481,7 +481,25 @@ if sales_file and inventory_file and pm_file:
                 else:
                     st.warning("⚠️ F_Sales is not a DataFrame — cannot remove columns.")
 
-                # 🔹 NO EARLY DUPLICATE REMOVAL ON 'Product Id' ANYMORE 🔹
+                # ------- REMOVE DUPLICATES BASED ON PRODUCT ID --------
+                if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
+                    dup_count_pid = int(F_Sales.duplicated(subset=["Product Id"]).sum())
+                    if dup_count_pid > 0:
+                        F_Sales = F_Sales.drop_duplicates(subset=["Product Id"], keep="first").reset_index(drop=True)
+                        st.success(f"🧹 Removed {dup_count_pid} duplicate rows based on Product Id")
+                else:
+                    if isinstance(F_Sales, pd.DataFrame):
+                        st.warning("⚠️ 'Product Id' column not found — Product Id duplicate check skipped.")
+
+                # ------- REMOVE DUPLICATES BASED ON SKU ID --------
+                if isinstance(F_Sales, pd.DataFrame) and "SKU ID" in F_Sales.columns:
+                    dup_count_sku = int(F_Sales.duplicated(subset=["SKU ID"]).sum())
+                    if dup_count_sku > 0:
+                        F_Sales = F_Sales.drop_duplicates(subset=["SKU ID"], keep="first").reset_index(drop=True)
+                        st.success(f"🧹 Removed {dup_count_sku} duplicate rows based on SKU ID")
+                else:
+                    if isinstance(F_Sales, pd.DataFrame):
+                        st.warning("⚠️ 'SKU ID' column not found — SKU ID duplicate check skipped.")
 
                 # Remove header row from Inventory if present
                 if Inventory.iloc[0].astype(str).str.contains('Title of your product').any():
@@ -532,9 +550,7 @@ if sales_file and inventory_file and pm_file:
                 )
                 F_Sales.rename(columns={'System Stock count': 'Flipkart Stock'}, inplace=True)
                 F_Sales.drop(columns=['Flipkart Serial Number'], errors='ignore', inplace=True)
-
-                # 🔹 NO POST-MERGE DEDUPE ON 'Product Id' ANYMORE 🔹
-
+                
                 # Calculate DOC
                 F_Sales["Flipkart Stock"] = pd.to_numeric(F_Sales["Flipkart Stock"], errors="coerce")
                 F_Sales["DRR"] = pd.to_numeric(F_Sales["DRR"], errors="coerce")
