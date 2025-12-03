@@ -465,17 +465,21 @@ if sales_file and inventory_file and pm_file:
                 Inventory = pd.read_excel(inventory_file)
                 PM = pd.read_excel(pm_file)
 
-                # ❌ No column removal here anymore
-                # We keep all columns exactly as per the input file.
-
-                # Ensure Final Sale Units numeric (no aggregation / no duplicate dropping)
+                # Ensure Final Sale Units numeric
                 if isinstance(F_Sales, pd.DataFrame) and "Final Sale Units" in F_Sales.columns:
                     F_Sales["Final Sale Units"] = pd.to_numeric(
                         F_Sales["Final Sale Units"], errors="coerce"
                     ).fillna(0)
 
-                # NOTE: No drop_duplicates / no groupby here.
-                # All rows from the original sales file are preserved.
+                # ------- REMOVE DUPLICATES BASED ON PRODUCT ID (KEEP FIRST) -------
+                if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
+                    dup_count_pid = int(F_Sales.duplicated(subset=["Product Id"]).sum())
+                    if dup_count_pid > 0:
+                        F_Sales = F_Sales.drop_duplicates(subset=["Product Id"], keep="first").reset_index(drop=True)
+                        st.info(f"🧹 Removed {dup_count_pid} duplicate rows based on Product Id (kept first occurrence).")
+                else:
+                    if isinstance(F_Sales, pd.DataFrame):
+                        st.warning("⚠️ 'Product Id' column not found — Product Id duplicate removal skipped.")
 
                 # Remove header row from Inventory if present
                 if Inventory.iloc[0].astype(str).str.contains('Title of your product').any():
