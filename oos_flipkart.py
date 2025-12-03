@@ -465,21 +465,8 @@ if sales_file and inventory_file and pm_file:
                 Inventory = pd.read_excel(inventory_file)
                 PM = pd.read_excel(pm_file)
 
-                # ---- REMOVE 3 COLUMNS IMMEDIATELY AFTER READING SALES FILE ----
-                remove_cols = ["Order Date", "Fulfillment type", "Location Id"]
-
-                if isinstance(F_Sales, pd.DataFrame):
-                    # case-insensitive matching: find actual column names matching the targets
-                    lower_map = {c.lower(): c for c in F_Sales.columns}
-                    found_cols = [lower_map[c.lower()] for c in remove_cols if c.lower() in lower_map]
-
-                    if found_cols:
-                        F_Sales = F_Sales.drop(columns=found_cols, errors="ignore")
-                        st.info(f"🧹 Removed columns from sales file: {', '.join(found_cols)}")
-                    else:
-                        st.info("ℹ️ No matching columns found to remove at start.")
-                else:
-                    st.warning("⚠️ F_Sales is not a DataFrame — cannot remove columns.")
+                # ❌ No column removal here anymore
+                # We keep all columns exactly as per the input file.
 
                 # Ensure Final Sale Units numeric (no aggregation / no duplicate dropping)
                 if isinstance(F_Sales, pd.DataFrame) and "Final Sale Units" in F_Sales.columns:
