@@ -465,21 +465,34 @@ if sales_file and inventory_file and pm_file:
                 Inventory = pd.read_excel(inventory_file)
                 PM = pd.read_excel(pm_file)
 
-                # Ensure Final Sale Units numeric
+                # Ensure Final Sale Units numeric & clean negatives
                 if isinstance(F_Sales, pd.DataFrame) and "Final Sale Units" in F_Sales.columns:
                     F_Sales["Final Sale Units"] = pd.to_numeric(
                         F_Sales["Final Sale Units"], errors="coerce"
                     ).fillna(0)
+                    F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
 
-                # ------- REMOVE DUPLICATES BASED ON PRODUCT ID (KEEP FIRST) -------
+                # ------- GROUP DUPLICATE PRODUCT ID & SUM Final Sale Units -------
                 if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
                     dup_count_pid = int(F_Sales.duplicated(subset=["Product Id"]).sum())
                     if dup_count_pid > 0:
-                        F_Sales = F_Sales.drop_duplicates(subset=["Product Id"], keep="first").reset_index(drop=True)
-                        st.info(f"🧹 Removed {dup_count_pid} duplicate rows based on Product Id (kept first occurrence).")
+                        st.info("🔁 Duplicate Product Id found — combining rows and summing Final Sale Units")
+
+                        agg_dict = {}
+                        for col in F_Sales.columns:
+                            if col == "Final Sale Units":
+                                agg_dict[col] = "sum"
+                            elif col != "Product Id":
+                                # keep first value for all other columns
+                                agg_dict[col] = "first"
+
+                        F_Sales = F_Sales.groupby("Product Id", as_index=False).agg(agg_dict)
+                        st.success(f"🧮 Aggregated {dup_count_pid} duplicate Product Id rows (Final Sale Units summed).")
+                    else:
+                        st.info("ℹ️ No duplicate Product Id values found to aggregate.")
                 else:
                     if isinstance(F_Sales, pd.DataFrame):
-                        st.warning("⚠️ 'Product Id' column not found — Product Id duplicate removal skipped.")
+                        st.warning("⚠️ 'Product Id' column not found — Product Id aggregation skipped.")
 
                 # Remove header row from Inventory if present
                 if Inventory.iloc[0].astype(str).str.contains('Title of your product').any():
@@ -510,7 +523,7 @@ if sales_file and inventory_file and pm_file:
                     cols.insert(sku_pos, bm)
                     F_Sales = F_Sales[cols]
 
-                # CLEAN Final Sale Units: negative → 0
+                # CLEAN Final Sale Units again (safe / idempotent)
                 if "Final Sale Units" in F_Sales.columns:
                     F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
                     F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
