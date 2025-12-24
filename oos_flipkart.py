@@ -467,336 +467,588 @@ def create_pivot_fallback_workbook(df: pd.DataFrame, sheet_name: str, sort_ascen
     buf.seek(0)
     return buf
 
+tab_business, tab_inventory = st.tabs(["📊 Business Report", "📦 Inventory Report"])
 
 # ------------------------- PROCESS DATA BUTTON -------------------------
 if sales_file and inventory_file and pm_file:
-    if st.button("🚀 Process Data", type="primary", use_container_width=True):
-        with st.spinner("Processing your data..."):
-            try:
-                # Read files safely
-                F_Sales = read_excel_safely(sales_file)
-                Inventory = read_excel_safely(inventory_file)
-                PM = read_excel_safely(pm_file)
+    with tab_business:
+        if st.button("🚀 Process Data", type="primary", use_container_width=True):
+            with st.spinner("Processing your data..."):
+                try:
+                    # Read files safely
+                    F_Sales = read_excel_safely(sales_file)
+                    Inventory = read_excel_safely(inventory_file)
+                    PM = read_excel_safely(pm_file)
 
-                # Basic column checks for Sales
-                required_sales_cols = {"Product Id", "Final Sale Units"}
-                missing_sales = required_sales_cols - set(F_Sales.columns)
-                if missing_sales:
-                    st.error(f"Sales file is missing these columns: {', '.join(missing_sales)}")
-                    st.stop()
+                    # Basic column checks for Sales
+                    required_sales_cols = {"Product Id", "Final Sale Units"}
+                    missing_sales = required_sales_cols - set(F_Sales.columns)
+                    if missing_sales:
+                        st.error(f"Sales file is missing these columns: {', '.join(missing_sales)}")
+                        st.stop()
 
-                # Ensure Final Sale Units numeric & clean negatives
-                if isinstance(F_Sales, pd.DataFrame) and "Final Sale Units" in F_Sales.columns:
-                    F_Sales["Final Sale Units"] = pd.to_numeric(
-                        F_Sales["Final Sale Units"], errors="coerce"
-                    ).fillna(0)
-                    F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
+                    # Ensure Final Sale Units numeric & clean negatives
+                    if isinstance(F_Sales, pd.DataFrame) and "Final Sale Units" in F_Sales.columns:
+                        F_Sales["Final Sale Units"] = pd.to_numeric(
+                            F_Sales["Final Sale Units"], errors="coerce"
+                        ).fillna(0)
+                        F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
 
-                # Store raw total units BEFORE any merges/grouping (to match original file)
-                raw_total_units = F_Sales["Final Sale Units"].sum()
-                st.session_state["raw_total_units"] = float(raw_total_units)
+                    # Store raw total units BEFORE any merges/grouping (to match original file)
+                    raw_total_units = F_Sales["Final Sale Units"].sum()
+                    st.session_state["raw_total_units"] = float(raw_total_units)
 
-                # ------- GROUP DUPLICATE PRODUCT ID & SUM Final Sale Units -------
-                if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
-                    dup_count_pid = int(F_Sales.duplicated(subset=["Product Id"]).sum())
-                    if dup_count_pid > 0:
-                        st.info("🔁 Duplicate Product Id found — combining rows and summing Final Sale Units")
+                    # ------- GROUP DUPLICATE PRODUCT ID & SUM Final Sale Units -------
+                    if isinstance(F_Sales, pd.DataFrame) and "Product Id" in F_Sales.columns:
+                        dup_count_pid = int(F_Sales.duplicated(subset=["Product Id"]).sum())
+                        if dup_count_pid > 0:
+                            st.info("🔁 Duplicate Product Id found — combining rows and summing Final Sale Units")
 
-                        agg_dict = {}
-                        for col in F_Sales.columns:
-                            if col == "Final Sale Units":
-                                agg_dict[col] = "sum"
-                            elif col != "Product Id":
-                                # keep first value for all other columns
-                                agg_dict[col] = "first"
+                            agg_dict = {}
+                            for col in F_Sales.columns:
+                                if col == "Final Sale Units":
+                                    agg_dict[col] = "sum"
+                                elif col != "Product Id":
+                                    # keep first value for all other columns
+                                    agg_dict[col] = "first"
 
-                        F_Sales = F_Sales.groupby("Product Id", as_index=False).agg(agg_dict)
-                        st.success(f"🧮 Aggregated {dup_count_pid} duplicate Product Id rows (Final Sale Units summed).")
+                            F_Sales = F_Sales.groupby("Product Id", as_index=False).agg(agg_dict)
+                            st.success(f"🧮 Aggregated {dup_count_pid} duplicate Product Id rows (Final Sale Units summed).")
+                        else:
+                            st.info("ℹ️ No duplicate Product Id values found to aggregate.")
                     else:
-                        st.info("ℹ️ No duplicate Product Id values found to aggregate.")
-                else:
-                    if isinstance(F_Sales, pd.DataFrame):
-                        st.warning("⚠️ 'Product Id' column not found — Product Id aggregation skipped.")
+                        if isinstance(F_Sales, pd.DataFrame):
+                            st.warning("⚠️ 'Product Id' column not found — Product Id aggregation skipped.")
 
-                # Merge with PM (Product Master) safely: de-duplicate FNS
-                PM_cols_needed = {"FNS", "Brand Manager", "Brand"}
-                missing_pm = PM_cols_needed - set(PM.columns)
-                if missing_pm:
-                    st.error(f"Product Master file is missing these columns: {', '.join(missing_pm)}")
-                    st.stop()
+                    # Merge with PM (Product Master) safely: de-duplicate FNS
+                    PM_cols_needed = {"FNS", "Brand Manager", "Brand"}
+                    missing_pm = PM_cols_needed - set(PM.columns)
+                    if missing_pm:
+                        st.error(f"Product Master file is missing these columns: {', '.join(missing_pm)}")
+                        st.stop()
 
-                pm_small = PM[['FNS', 'Brand Manager', 'Brand']].copy()
-                pm_small = pm_small.drop_duplicates(subset=['FNS'], keep='first')
+                    pm_small = PM[['FNS', 'Brand Manager', 'Brand']].copy()
+                    pm_small = pm_small.drop_duplicates(subset=['FNS'], keep='first')
 
-                F_Sales = F_Sales.merge(
-                    pm_small,
-                    left_on='Product Id',
-                    right_on='FNS',
-                    how='left'
-                )
-                F_Sales = F_Sales.drop(columns=['FNS'], errors='ignore')
-                
-                # Rename and reorganize columns
-                if 'Brand_y' in F_Sales.columns:
-                    F_Sales.rename(columns={'Brand_y': 'Brand'}, inplace=True)
-                    if 'Brand_x' in F_Sales.columns:
-                        F_Sales.drop(columns=['Brand_x'], inplace=True)
-                
-                # Reorder columns
-                cols = F_Sales.columns.tolist()
-                if 'Brand Manager' in cols and 'Brand' in cols and 'SKU ID' in cols:
-                    bm = cols.pop(cols.index('Brand Manager'))
-                    br = cols.pop(cols.index('Brand'))
-                    sku_pos = cols.index('SKU ID')
-                    cols.insert(sku_pos, br)
-                    cols.insert(sku_pos, bm)
+                    F_Sales = F_Sales.merge(
+                        pm_small,
+                        left_on='Product Id',
+                        right_on='FNS',
+                        how='left'
+                    )
+                    F_Sales = F_Sales.drop(columns=['FNS'], errors='ignore')
+                    
+                    # ---------------- PURCHASE MASTER COLUMNS (Vendor SKU, Product Name, CP) ----------------
+
+                    required_pm_cols = {
+                        "FNS",
+                        "Vendor SKU Codes",
+                        "Product Name",
+                        "CP"
+                    }
+
+                    missing_pm_cols = required_pm_cols - set(PM.columns)
+                    if missing_pm_cols:
+                        st.error(f"Purchase Master file missing columns: {', '.join(missing_pm_cols)}")
+                        st.stop()
+
+                    pm_purchase = PM[
+                        ["FNS", "Vendor SKU Codes", "Product Name", "CP"]
+                    ].copy()
+
+                    # De-duplicate on Product Id
+                    pm_purchase = pm_purchase.drop_duplicates(
+                        subset=["FNS"],
+                        keep="first"
+                    )
+
+                    # Merge into Business Report
+                    F_Sales = F_Sales.merge(
+                        pm_purchase,
+                        left_on="Product Id",
+                        right_on="FNS",
+                        how="left"
+                    )
+
+                    # Rename and reorganize columns
+                    if 'Brand_y' in F_Sales.columns:
+                        F_Sales.rename(columns={'Brand_y': 'Brand'}, inplace=True)
+                        if 'Brand_x' in F_Sales.columns:
+                            F_Sales.drop(columns=['Brand_x'], inplace=True)
+                    
+                    # Reorder columns
+                    cols = F_Sales.columns.tolist()
+                    if 'Brand Manager' in cols and 'Brand' in cols and 'SKU ID' in cols:
+                        bm = cols.pop(cols.index('Brand Manager'))
+                        br = cols.pop(cols.index('Brand'))
+                        sku_pos = cols.index('SKU ID')
+                        cols.insert(sku_pos, br)
+                        cols.insert(sku_pos, bm)
+                        F_Sales = F_Sales[cols]
+
+                    # CLEAN Final Sale Units again (safe / idempotent)
+                    if "Final Sale Units" in F_Sales.columns:
+                        F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
+                        F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
+                    
+                    # Calculate DRR using cleaned Final Sale Units
+                    if "Final Sale Units" in F_Sales.columns:
+                        F_Sales["DRR"] = (F_Sales["Final Sale Units"] / no_of_days).round(2)
+                    else:
+                        F_Sales["DRR"] = 0
+
+                    # --- Clean Inventory columns and ensure correct mapping (de-duplicate key) ---
+                    inv = Inventory.copy()
+                    inv.columns = inv.columns.str.strip()
+
+                    required_inv_cols = {"Flipkart Serial Number", "System Stock count"}
+                    missing_inv = required_inv_cols - set(inv.columns)
+                    if missing_inv:
+                        st.error(f"Inventory file is missing these columns: {', '.join(missing_inv)}")
+                        st.stop()
+
+                    inv_small = inv[["Flipkart Serial Number", "System Stock count"]].drop_duplicates(
+                        subset=["Flipkart Serial Number"],
+                        keep="first"
+                    )
+
+                    # Merge Sales with Inventory
+                    F_Sales = F_Sales.merge(
+                        inv_small,
+                        left_on="Product Id",
+                        right_on="Flipkart Serial Number",
+                        how="left"
+                    )
+
+                    F_Sales.rename(columns={"System Stock count": "Flipkart Stock"}, inplace=True)
+                    F_Sales.drop(columns=["Flipkart Serial Number"], errors="ignore", inplace=True)
+                    
+                    # Calculate DOC
+                    F_Sales["Flipkart Stock"] = pd.to_numeric(F_Sales["Flipkart Stock"], errors="coerce")
+                    F_Sales["DRR"] = pd.to_numeric(F_Sales["DRR"], errors="coerce")
+                    
+                    F_Sales["DOC"] = np.where(
+                        F_Sales["DRR"] > 0,
+                        F_Sales["Flipkart Stock"] / F_Sales["DRR"],
+                        np.nan
+                    )
+                    F_Sales["DOC"] = F_Sales["DOC"].round(2)
+                    F_Sales["DOC"] = F_Sales["DOC"].fillna(0)
+                    
+                    cols = F_Sales.columns.tolist()
+
+                    if "Product Id" in cols:
+                        insert_at = cols.index("Product Id") + 1
+                        for c in ["Vendor SKU Codes", "Product Name"]:
+                            if c in cols:
+                                cols.insert(insert_at, cols.pop(cols.index(c)))
+                                insert_at += 1
+
                     F_Sales = F_Sales[cols]
 
-                # CLEAN Final Sale Units again (safe / idempotent)
-                if "Final Sale Units" in F_Sales.columns:
-                    F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
-                    F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
-                
-                # Calculate DRR using cleaned Final Sale Units
-                if "Final Sale Units" in F_Sales.columns:
-                    F_Sales["DRR"] = (F_Sales["Final Sale Units"] / no_of_days).round(2)
-                else:
-                    F_Sales["DRR"] = 0
+                    
+                    # MAIN processed full Excel (no filters)
+                    excel_data_bytes = create_formatted_excel(F_Sales).getvalue()
 
-                # --- Clean Inventory columns and ensure correct mapping (de-duplicate key) ---
-                inv = Inventory.copy()
-                inv.columns = inv.columns.str.strip()
+                    # OOS: Flipkart Stock == 0, DOC ascending
+                    oos_df = F_Sales.copy()
+                    oos_df["Flipkart Stock"] = pd.to_numeric(oos_df["Flipkart Stock"], errors="coerce").fillna(0)
+                    oos_df = oos_df[oos_df["Flipkart Stock"] == 0].copy()
+                    if "DOC" in oos_df.columns:
+                        oos_df["DOC"] = pd.to_numeric(oos_df["DOC"], errors="coerce")
+                        oos_df = oos_df.sort_values(by="DOC", ascending=True).reset_index(drop=True)
 
-                required_inv_cols = {"Flipkart Serial Number", "System Stock count"}
-                missing_inv = required_inv_cols - set(inv.columns)
-                if missing_inv:
-                    st.error(f"Inventory file is missing these columns: {', '.join(missing_inv)}")
-                    st.stop()
+                    # Overstock: DOC >= 90, DOC descending
+                    over_df = F_Sales.copy()
+                    over_df["DOC"] = pd.to_numeric(over_df["DOC"], errors="coerce")
+                    over_df = over_df[over_df["DOC"] >= 90].copy()
+                    over_df = over_df.sort_values(by="DOC", ascending=False).reset_index(drop=True)
 
-                inv_small = inv[["Flipkart Serial Number", "System Stock count"]].drop_duplicates(
-                    subset=["Flipkart Serial Number"],
-                    keep="first"
-                )
+                    base_dir = os.path.dirname(__file__)
+                    tmpl_xlsm = os.path.join(base_dir, "flipkart_pivot_template.xlsm")
+                    tmpl_xlsx = os.path.join(base_dir, "flipkart_pivot_template.xlsx")
+                    template_path = tmpl_xlsm if os.path.exists(tmpl_xlsm) else (tmpl_xlsx if os.path.exists(tmpl_xlsx) else None)
 
-                # Merge Sales with Inventory
-                F_Sales = F_Sales.merge(
-                    inv_small,
-                    left_on="Product Id",
-                    right_on="Flipkart Serial Number",
-                    how="left"
-                )
-
-                F_Sales.rename(columns={"System Stock count": "Flipkart Stock"}, inplace=True)
-                F_Sales.drop(columns=["Flipkart Serial Number"], errors="ignore", inplace=True)
-                
-                # Calculate DOC
-                F_Sales["Flipkart Stock"] = pd.to_numeric(F_Sales["Flipkart Stock"], errors="coerce")
-                F_Sales["DRR"] = pd.to_numeric(F_Sales["DRR"], errors="coerce")
-                
-                F_Sales["DOC"] = np.where(
-                    F_Sales["DRR"] > 0,
-                    F_Sales["Flipkart Stock"] / F_Sales["DRR"],
-                    np.nan
-                )
-                F_Sales["DOC"] = F_Sales["DOC"].round(2)
-                F_Sales["DOC"] = F_Sales["DOC"].fillna(0)
-                
-                # MAIN processed full Excel (no filters)
-                excel_data_bytes = create_formatted_excel(F_Sales).getvalue()
-
-                # OOS: Flipkart Stock == 0, DOC ascending
-                oos_df = F_Sales.copy()
-                oos_df["Flipkart Stock"] = pd.to_numeric(oos_df["Flipkart Stock"], errors="coerce").fillna(0)
-                oos_df = oos_df[oos_df["Flipkart Stock"] == 0].copy()
-                if "DOC" in oos_df.columns:
-                    oos_df["DOC"] = pd.to_numeric(oos_df["DOC"], errors="coerce")
-                    oos_df = oos_df.sort_values(by="DOC", ascending=True).reset_index(drop=True)
-
-                # Overstock: DOC >= 90, DOC descending
-                over_df = F_Sales.copy()
-                over_df["DOC"] = pd.to_numeric(over_df["DOC"], errors="coerce")
-                over_df = over_df[over_df["DOC"] >= 90].copy()
-                over_df = over_df.sort_values(by="DOC", ascending=False).reset_index(drop=True)
-
-                base_dir = os.path.dirname(__file__)
-                tmpl_xlsm = os.path.join(base_dir, "flipkart_pivot_template.xlsm")
-                tmpl_xlsx = os.path.join(base_dir, "flipkart_pivot_template.xlsx")
-                template_path = tmpl_xlsm if os.path.exists(tmpl_xlsm) else (tmpl_xlsx if os.path.exists(tmpl_xlsx) else None)
-
-                # ---------- OOS export ----------
-                oos_bytes = None
-                oos_ext = ".xlsx"
-                oos_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-                if template_path:
-                    try:
-                        buf_oos = fill_template_and_get_bytes(template_path, oos_df, table_name="DataTable")
-                        oos_bytes = buf_oos.getvalue()
-                        if template_path.lower().endswith(".xlsm"):
-                            oos_ext = ".xlsm"
-                            oos_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
-                        st.success("✅ OOS: Used pivot template — your VBA macro will build PivotTable & PivotChart on open.")
-                    except Exception:
-                        st.warning("⚠️ OOS: Template fill failed, using fallback workbook.")
-                        with st.expander("Show OOS error details"):
-                            st.code(traceback.format_exc())
-
-                if oos_bytes is None:
-                    fb_oos = create_pivot_fallback_workbook(oos_df, sheet_name="OOS", sort_ascending=True)
-                    oos_bytes = fb_oos.getvalue()
+                    # ---------- OOS export ----------
+                    oos_bytes = None
                     oos_ext = ".xlsx"
                     oos_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    st.info("ℹ️ OOS fallback workbook generated (DataTable + PivotSummary + ChartData + HowToPivot).")
 
-                # ---------- Overstock export ----------
-                over_bytes = None
-                over_ext = ".xlsx"
-                over_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    if template_path:
+                        try:
+                            buf_oos = fill_template_and_get_bytes(template_path, oos_df, table_name="DataTable")
+                            oos_bytes = buf_oos.getvalue()
+                            if template_path.lower().endswith(".xlsm"):
+                                oos_ext = ".xlsm"
+                                oos_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
+                            st.success("✅ OOS: Used pivot template — your VBA macro will build PivotTable & PivotChart on open.")
+                        except Exception:
+                            st.warning("⚠️ OOS: Template fill failed, using fallback workbook.")
+                            with st.expander("Show OOS error details"):
+                                st.code(traceback.format_exc())
 
-                if template_path:
-                    try:
-                        buf_over = fill_template_and_get_bytes(template_path, over_df, table_name="DataTable")
-                        over_bytes = buf_over.getvalue()
-                        if template_path.lower().endswith(".xlsm"):
-                            over_ext = ".xlsm"
-                            over_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
-                        st.success("✅ Overstock: Used pivot template — your VBA macro will build PivotTable & PivotChart on open.")
-                    except Exception:
-                        st.warning("⚠️ Overstock: Template fill failed, using fallback workbook.")
-                        with st.expander("Show Overstock error details"):
-                            st.code(traceback.format_exc())
+                    if oos_bytes is None:
+                        fb_oos = create_pivot_fallback_workbook(oos_df, sheet_name="OOS", sort_ascending=True)
+                        oos_bytes = fb_oos.getvalue()
+                        oos_ext = ".xlsx"
+                        oos_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        st.info("ℹ️ OOS fallback workbook generated (DataTable + PivotSummary + ChartData + HowToPivot).")
 
-                if over_bytes is None:
-                    fb_over = create_pivot_fallback_workbook(over_df, sheet_name="Overstock", sort_ascending=False)
-                    over_bytes = fb_over.getvalue()
+                    # ---------- Overstock export ----------
+                    over_bytes = None
                     over_ext = ".xlsx"
                     over_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    st.info("ℹ️ Overstock fallback workbook generated (DataTable + PivotSummary + ChartData + HowToPivot).")
 
-                # Save into session_state so download buttons can be used anytime
-                st.session_state["F_Sales_df"] = F_Sales
-                st.session_state["excel_data_main"] = excel_data_bytes
-                st.session_state["oos_bytes"] = oos_bytes
-                st.session_state["oos_ext"] = oos_ext
-                st.session_state["oos_mime"] = oos_mime
-                st.session_state["over_bytes"] = over_bytes
-                st.session_state["over_ext"] = over_ext
-                st.session_state["over_mime"] = over_mime
+                    if template_path:
+                        try:
+                            buf_over = fill_template_and_get_bytes(template_path, over_df, table_name="DataTable")
+                            over_bytes = buf_over.getvalue()
+                            if template_path.lower().endswith(".xlsm"):
+                                over_ext = ".xlsm"
+                                over_mime = "application/vnd.ms-excel.sheet.macroEnabled.12"
+                            st.success("✅ Overstock: Used pivot template — your VBA macro will build PivotTable & PivotChart on open.")
+                        except Exception:
+                            st.warning("⚠️ Overstock: Template fill failed, using fallback workbook.")
+                            with st.expander("Show Overstock error details"):
+                                st.code(traceback.format_exc())
 
-                st.success("✅ Data processed and files prepared! Scroll down to view and download.")
+                    if over_bytes is None:
+                        fb_over = create_pivot_fallback_workbook(over_df, sheet_name="Overstock", sort_ascending=False)
+                        over_bytes = fb_over.getvalue()
+                        over_ext = ".xlsx"
+                        over_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        st.info("ℹ️ Overstock fallback workbook generated (DataTable + PivotSummary + ChartData + HowToPivot).")
+
+                    # Save into session_state so download buttons can be used anytime
+                    st.session_state["F_Sales_df"] = F_Sales
+                    st.session_state["excel_data_main"] = excel_data_bytes
+                    st.session_state["oos_bytes"] = oos_bytes
+                    st.session_state["oos_ext"] = oos_ext
+                    st.session_state["oos_mime"] = oos_mime
+                    st.session_state["over_bytes"] = over_bytes
+                    st.session_state["over_ext"] = over_ext
+                    st.session_state["over_mime"] = over_mime
+
+                    st.success("✅ Data processed and files prepared! Scroll down to view and download.")
+                
+                except Exception as e:
+                    st.error(f"❌ Error processing files: {str(e)}")
+                    st.info("Please ensure all files are in the correct format and contain the required columns.")
+
+
+        # ------------------------- VIEW + DOWNLOAD SECTION -------------------------
+        if "F_Sales_df" in st.session_state:
+            F_Sales = st.session_state["F_Sales_df"]
+
+            st.markdown("---")
+            st.header("📈 Processed Results")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Products", len(F_Sales))
+            with col2:
+                if "raw_total_units" in st.session_state:
+                    st.metric("Total Final Sale Units", int(st.session_state["raw_total_units"]))
+                elif "Final Sale Units" in F_Sales.columns:
+                    st.metric("Total Final Sale Units", int(F_Sales["Final Sale Units"].sum()))
+                else:
+                    st.metric("Total Final Sale Units", "N/A")
+            with col3:
+                if "Final Sale Amount" in F_Sales.columns:
+                    st.metric("Total GMV", f"₹{F_Sales['Final Sale Amount'].sum():,.0f}")
+                else:
+                    st.metric("Total GMV", "N/A")
+            with col4:
+                if "DOC" in F_Sales.columns:
+                    st.metric("Avg DOC", f"{F_Sales['DOC'].mean():.1f} days")
+                else:
+                    st.metric("Avg DOC", "N/A")
             
-            except Exception as e:
-                st.error(f"❌ Error processing files: {str(e)}")
-                st.info("Please ensure all files are in the correct format and contain the required columns.")
+            st.markdown("### 📊 Processed Data Preview")
+            if "DOC" in F_Sales.columns:
+                styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
+                st.dataframe(styled_df, height=400, use_container_width=True)
+            else:
+                st.dataframe(F_Sales, height=400, use_container_width=True)
+
+            st.markdown("---")
+            st.header("💾 Download Files")
+
+            colA, colB, colC = st.columns(3)
+
+            with colA:
+                st.markdown("**Main Processed File**")
+                st.download_button(
+                    label="📥 Download Full Analysis Excel",
+                    data=st.session_state["excel_data_main"],
+                    file_name="Flipkart_Sales_Analysis_Formatted.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="main_download",
+                    use_container_width=True
+                )
+
+            with colB:
+                st.markdown("**OOS (Flipkart Stock = 0, DOC ↑)**")
+                st.download_button(
+                    label=f"📥 Download OOS with Pivot ({st.session_state['oos_ext']})",
+                    data=st.session_state["oos_bytes"],
+                    file_name=f"Flipkart_OOS_with_Pivot{st.session_state['oos_ext']}",
+                    mime=st.session_state["oos_mime"],
+                    key="oos_download_btn",
+                    use_container_width=True
+                )
+
+            with colC:
+                st.markdown("**Overstock (DOC ≥ 90, DOC ↓)**")
+                st.download_button(
+                    label=f"📥 Download Overstock with Pivot ({st.session_state['over_ext']})",
+                    data=st.session_state["over_bytes"],
+                    file_name=f"Flipkart_Overstock_with_Pivot{st.session_state['over_ext']}",
+                    mime=st.session_state["over_mime"],
+                    key="over_download_btn",
+                    use_container_width=True
+                )
+
+            st.markdown("---")
+            st.markdown("### 📈 Stock Status Insights")
+            col1, col2 = st.columns(2)
+            
+            if "DOC" in F_Sales.columns:
+                with col1:
+                    critical_stock = len(F_Sales[F_Sales['DOC'] < 7])
+                    low_stock = len(F_Sales[(F_Sales['DOC'] >= 7) & (F_Sales['DOC'] < 15)])
+                    optimal_stock = len(F_Sales[(F_Sales['DOC'] >= 15) & (F_Sales['DOC'] < 30)])
+                    
+                    st.markdown(f"""
+                    **Stock Alerts:**
+                    - 🔴 Critical (0-7 days): **{critical_stock} products**
+                    - 🟠 Low (7-15 days): **{low_stock} products**
+                    - 🟢 Optimal (15-30 days): **{optimal_stock} products**
+                    """)
+                
+                with col2:
+                    high_stock = len(F_Sales[(F_Sales['DOC'] >= 30) & (F_Sales['DOC'] < 45)])
+                    very_high_stock = len(F_Sales[(F_Sales['DOC'] >= 45) & (F_Sales['DOC'] < 60)])
+                    excess_stock = len(F_Sales[F_Sales['DOC'] >= 60])
+                    
+                    st.markdown(f"""
+                    **Excess Stock:**
+                    - 🟡 Monitor (30-45 days): **{high_stock} products**
+                    - 🔵 High (45-60 days): **{very_high_stock} products**
+                    - 🟤 Excess (60+ days): **{excess_stock} products**
+                    """)
+            else:
+                st.info("DOC column not found, cannot compute stock buckets.")
+
+    with tab_inventory:
+        st.header("📦 Inventory Report")
+
+        # -------------------------------------------------
+        # STEP 1: INVENTORY HEADER CLEANING
+        # -------------------------------------------------
+        if "Inventory" in locals() and isinstance(Inventory, pd.DataFrame):
+
+            inv = Inventory.copy()
+
+            # Drop fully empty rows
+            inv = inv.dropna(how="all")
+
+            # First row as header
+            inv.columns = inv.iloc[0]
+            inv = inv.iloc[1:]
+
+            # Clean column names
+            inv.columns = inv.columns.astype(str).str.strip()
+
+            # Reset index
+            inv = inv.reset_index(drop=True)
+
+            st.subheader("📄 Cleaned Inventory Preview")
+            st.caption(f"Rows: {len(inv)} | Columns: {len(inv.columns)}")
+
+            with st.expander("🔍 Inventory Columns"):
+                st.write(list(inv.columns))
+
+            st.dataframe(inv, use_container_width=True, height=300)
+
+            # Save cleaned inventory
+            st.session_state["Inventory_df"] = inv
+
+            st.success("✅ Inventory header fixed and data cleaned.")
+
+        else:
+            st.warning("⚠️ Inventory data not available.")
+            st.stop()
+
+        # -------------------------------------------------
+        # STEP 2: INVENTORY BUSINESS LOGIC
+        # -------------------------------------------------
+        if (
+            "Inventory_df" in st.session_state
+            and "F_Sales_df" in st.session_state
+        ):
+
+            inv = st.session_state["Inventory_df"].copy()
+            sales = st.session_state["F_Sales_df"].copy()
+
+            # ---------------- BUSINESS PIVOT (VLOOKUP LOGIC) ----------------
+            business_pivot = (
+                sales
+                .groupby("Product Id", dropna=False)["Final Sale Units"]
+                .sum()
+                .reset_index()
+                .rename(columns={"Final Sale Units": "Business Sales Qty"})
+            )
+
+            # ---------------- PURCHASE MASTER LOOKUP ----------------
+            pm_inv = PM[
+                ["FNS", "Brand", "Brand Manager", "Vendor SKU Codes", "CP"]
+            ].copy()
+
+            pm_inv = pm_inv.drop_duplicates(subset=["FNS"], keep="first")
+
+            # ---------------- MERGE: INVENTORY + BUSINESS SALES ----------------
+            inv = inv.merge(
+                business_pivot,
+                left_on="Flipkart's Identifier of the product",
+                right_on="Product Id",
+                how="left"
+            )
+            inv.drop(columns=["Product Id"], errors="ignore", inplace=True)
+
+            # ---------------- MERGE: INVENTORY + PURCHASE MASTER ----------------
+            inv = inv.merge(
+                pm_inv,
+                left_on="Flipkart's Identifier of the product",
+                right_on="FNS",
+                how="left"
+            )
+            inv.drop(columns=["FNS"], errors="ignore", inplace=True)
+
+            # ---------------- CLEAN NUMERIC FIELDS ----------------
+            inv["Current Stock Count"] = pd.to_numeric(
+                inv["Current stock count for your product"], errors="coerce"
+            ).fillna(0)
+
+            inv["Business Sales Qty"] = pd.to_numeric(
+                inv["Business Sales Qty"], errors="coerce"
+            ).fillna(0)
+
+            inv["CP"] = pd.to_numeric(inv["CP"], errors="coerce").fillna(0)
+
+            # ---------------- CALCULATIONS ----------------
+            inv["As per Qty"] = (inv["CP"] * inv["Current Stock Count"]).round(2)
+
+            inv["DRR"] = np.where(
+                inv["Business Sales Qty"] > 0,
+                (inv["Business Sales Qty"] / no_of_days).round(2),
+                0
+            )
+
+            inv["DOC"] = np.where(
+                inv["DRR"] > 0,
+                (inv["Current Stock Count"] / inv["DRR"]).round(2),
+                0
+            )
+
+            # ---------------- FINAL COLUMN ORDER ----------------
+            preferred_cols = [
+                "Flipkart's Identifier of the product",
+                "Vendor SKU Codes",
+                "Brand",
+                "Brand Manager",
+                "CP",
+                "Current Stock Count",
+                "As per Qty",
+                "Business Sales Qty",
+                "DRR",
+                "DOC"
+            ]
+
+            final_cols = (
+                [c for c in preferred_cols if c in inv.columns] +
+                [c for c in inv.columns if c not in preferred_cols]
+            )
+
+            inv = inv[final_cols]
+
+            # ---------------- DISPLAY FINAL INVENTORY REPORT ----------------
+            st.subheader("📊 Inventory Analysis (Final)")
+            st.dataframe(inv, use_container_width=True, height=350)
+
+            st.success("✅ Inventory report generated successfully.")
+
+            st.session_state["Inventory_Report_Final"] = inv
+            
+            # ---------------- INVENTORY DOWNLOAD ----------------
+            st.markdown("---")
+            st.subheader("💾 Download Inventory Report")
+
+            inventory_excel = BytesIO()
+
+            with pd.ExcelWriter(inventory_excel, engine="openpyxl") as writer:
+                inv.to_excel(writer, index=False, sheet_name="Inventory_Report")
+
+            inventory_excel.seek(0)
+
+            st.download_button(
+                label="📥 Download Inventory Report (Excel)",
+                data=inventory_excel,
+                file_name="Flipkart_Inventory_Report.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+            
+            # -------------------------------------------------
+            # STEP 3: ZERO BUSINESS SALES QTY (NO SALES ITEMS)
+            # -------------------------------------------------
+            st.markdown("---")
+            st.subheader("🚫 Inventory with ZERO Business Sales Qty")
+
+            # Filter only Business Sales Qty == 0
+            zero_sales_inv = inv[
+                (inv["Business Sales Qty"].fillna(0) == 0)
+            ].copy()
+
+            st.caption(f"Products with zero sales: {len(zero_sales_inv)}")
+
+            if zero_sales_inv.empty:
+                st.info("ℹ️ No products found with Business Sales Qty = 0")
+            else:
+                st.dataframe(
+                    zero_sales_inv,
+                    use_container_width=True,
+                    height=350
+                )
+
+                # ---------------- DOWNLOAD: ZERO SALES INVENTORY ----------------
+                zero_sales_excel = BytesIO()
+
+                with pd.ExcelWriter(zero_sales_excel, engine="openpyxl") as writer:
+                    zero_sales_inv.to_excel(
+                        writer,
+                        index=False,
+                        sheet_name="Zero_Business_Sales"
+                    )
+
+                zero_sales_excel.seek(0)
+
+                st.download_button(
+                    label="📥 Download ZERO Sales Inventory (Excel)",
+                    data=zero_sales_excel,
+                    file_name="Flipkart_Inventory_Zero_Business_Sales.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
 
-# ------------------------- VIEW + DOWNLOAD SECTION -------------------------
-if "F_Sales_df" in st.session_state:
-    F_Sales = st.session_state["F_Sales_df"]
-
-    st.markdown("---")
-    st.header("📈 Processed Results")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Products", len(F_Sales))
-    with col2:
-        if "raw_total_units" in st.session_state:
-            st.metric("Total Final Sale Units", int(st.session_state["raw_total_units"]))
-        elif "Final Sale Units" in F_Sales.columns:
-            st.metric("Total Final Sale Units", int(F_Sales["Final Sale Units"].sum()))
         else:
-            st.metric("Total Final Sale Units", "N/A")
-    with col3:
-        if "Final Sale Amount" in F_Sales.columns:
-            st.metric("Total GMV", f"₹{F_Sales['Final Sale Amount'].sum():,.0f}")
-        else:
-            st.metric("Total GMV", "N/A")
-    with col4:
-        if "DOC" in F_Sales.columns:
-            st.metric("Avg DOC", f"{F_Sales['DOC'].mean():.1f} days")
-        else:
-            st.metric("Avg DOC", "N/A")
+            st.warning("⚠️ Please process Business Report first.")
     
-    st.markdown("### 📊 Processed Data Preview")
-    if "DOC" in F_Sales.columns:
-        styled_df = F_Sales.style.apply(style_doc_column, subset=['DOC'])
-        st.dataframe(styled_df, height=400, use_container_width=True)
-    else:
-        st.dataframe(F_Sales, height=400, use_container_width=True)
-
+    # Footer
     st.markdown("---")
-    st.header("💾 Download Files")
-
-    colA, colB, colC = st.columns(3)
-
-    with colA:
-        st.markdown("**Main Processed File**")
-        st.download_button(
-            label="📥 Download Full Analysis Excel",
-            data=st.session_state["excel_data_main"],
-            file_name="Flipkart_Sales_Analysis_Formatted.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="main_download",
-            use_container_width=True
-        )
-
-    with colB:
-        st.markdown("**OOS (Flipkart Stock = 0, DOC ↑)**")
-        st.download_button(
-            label=f"📥 Download OOS with Pivot ({st.session_state['oos_ext']})",
-            data=st.session_state["oos_bytes"],
-            file_name=f"Flipkart_OOS_with_Pivot{st.session_state['oos_ext']}",
-            mime=st.session_state["oos_mime"],
-            key="oos_download_btn",
-            use_container_width=True
-        )
-
-    with colC:
-        st.markdown("**Overstock (DOC ≥ 90, DOC ↓)**")
-        st.download_button(
-            label=f"📥 Download Overstock with Pivot ({st.session_state['over_ext']})",
-            data=st.session_state["over_bytes"],
-            file_name=f"Flipkart_Overstock_with_Pivot{st.session_state['over_ext']}",
-            mime=st.session_state["over_mime"],
-            key="over_download_btn",
-            use_container_width=True
-        )
-
-    st.markdown("---")
-    st.markdown("### 📈 Stock Status Insights")
-    col1, col2 = st.columns(2)
+    st.markdown("""
+    <div style='text-align: center; color: gray;'>
+        <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    if "DOC" in F_Sales.columns:
-        with col1:
-            critical_stock = len(F_Sales[F_Sales['DOC'] < 7])
-            low_stock = len(F_Sales[(F_Sales['DOC'] >= 7) & (F_Sales['DOC'] < 15)])
-            optimal_stock = len(F_Sales[(F_Sales['DOC'] >= 15) & (F_Sales['DOC'] < 30)])
-            
-            st.markdown(f"""
-            **Stock Alerts:**
-            - 🔴 Critical (0-7 days): **{critical_stock} products**
-            - 🟠 Low (7-15 days): **{low_stock} products**
-            - 🟢 Optimal (15-30 days): **{optimal_stock} products**
-            """)
-        
-        with col2:
-            high_stock = len(F_Sales[(F_Sales['DOC'] >= 30) & (F_Sales['DOC'] < 45)])
-            very_high_stock = len(F_Sales[(F_Sales['DOC'] >= 45) & (F_Sales['DOC'] < 60)])
-            excess_stock = len(F_Sales[F_Sales['DOC'] >= 60])
-            
-            st.markdown(f"""
-            **Excess Stock:**
-            - 🟡 Monitor (30-45 days): **{high_stock} products**
-            - 🔵 High (45-60 days): **{very_high_stock} products**
-            - 🟤 Excess (60+ days): **{excess_stock} products**
-            """)
-    else:
-        st.info("DOC column not found, cannot compute stock buckets.")
-
-# Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: gray;'>
-    <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
-</div>
-""", unsafe_allow_html=True)
