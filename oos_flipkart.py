@@ -60,20 +60,20 @@ with col2:
     
     # File uploaders
     sales_file = st.file_uploader(
-        "Upload Flipkart Sales Report (Excel)",
-        type=['xlsx', 'xls'],
+        "Upload Flipkart Sales Report (Excel/XLS/CSV)",
+        type=['xlsx', 'xls','csv'],
         help="Upload the sales report downloaded from Flipkart"
     )
     
     inventory_file = st.file_uploader(
-        "Upload Inventory Listing (Excel/XLS)",
-        type=['xlsx', 'xls'],
+        "Upload Inventory Listing (Excel/XLS/CSV)",
+        type=['xlsx', 'xls','csv'],
         help="Upload the inventory/listing report from Flipkart"
     )
     
     pm_file = st.file_uploader(
-        "Upload Product Master (Excel)",
-        type=['xlsx', 'xls'],
+        "Upload Product Master (Excel/XLS/CSV)",
+        type=['xlsx', 'xls','csv'],
         help="Upload the product master file with brand and manager details"
     )
 
@@ -171,6 +171,13 @@ def read_excel_safely(uploaded_file):
             return pd.read_excel(uploaded_file)
     else:
         return pd.read_excel(uploaded_file)
+
+def read_file_safely(uploaded_file):
+    name = uploaded_file.name.lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(uploaded_file)
+    else:
+        return read_excel_safely(uploaded_file)
 
 # ---------- Helper 1: main formatted Excel ----------
 def create_formatted_excel(df):
@@ -476,10 +483,10 @@ if sales_file and inventory_file and pm_file:
             with st.spinner("Processing your data..."):
                 try:
                     # Read files safely
-                    F_Sales = read_excel_safely(sales_file)
-                    Inventory = read_excel_safely(inventory_file)
-                    PM = read_excel_safely(pm_file)
-
+                    F_Sales = read_file_safely(sales_file)
+                    Inventory = read_file_safely(inventory_file)
+                    PM = read_file_safely(pm_file)
+                    
                     # Basic column checks for Sales
                     required_sales_cols = {"Product Id", "Final Sale Units"}
                     missing_sales = required_sales_cols - set(F_Sales.columns)
@@ -1052,3 +1059,4 @@ if sales_file and inventory_file and pm_file:
     </div>
     """, unsafe_allow_html=True)
     
+
