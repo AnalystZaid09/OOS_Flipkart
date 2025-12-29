@@ -597,7 +597,13 @@ if sales_file and inventory_file and pm_file:
                     if "Final Sale Units" in F_Sales.columns:
                         F_Sales["Final Sale Units"] = pd.to_numeric(F_Sales["Final Sale Units"], errors="coerce").fillna(0)
                         F_Sales.loc[F_Sales["Final Sale Units"] < 0, "Final Sale Units"] = 0
-                    
+
+                    # Remove 0 and negative values from Final Sale Units and Final Sale Amount
+                    for col in ["Final Sale Units", "Final Sale Amount"]:
+                        if col in F_Sales.columns:
+                            F_Sales[col] = pd.to_numeric(F_Sales[col], errors="coerce")
+                            F_Sales = F_Sales[F_Sales[col] > 0]
+
                     # Calculate DRR using cleaned Final Sale Units
                     if "Final Sale Units" in F_Sales.columns:
                         F_Sales["DRR"] = (F_Sales["Final Sale Units"] / no_of_days).round(2)
@@ -1059,4 +1065,5 @@ if sales_file and inventory_file and pm_file:
     </div>
     """, unsafe_allow_html=True)
     
+
 
