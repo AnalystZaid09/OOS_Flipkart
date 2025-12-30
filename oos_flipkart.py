@@ -519,7 +519,6 @@ if sales_file and inventory_file and pm_file:
                                     # keep first value for all other columns
                                     agg_dict[col] = "first"
 
-                            F_Sales = F_Sales.groupby("Product Id", as_index=False).agg(agg_dict)
                             st.success(f"🧮 Aggregated {dup_count_pid} duplicate Product Id rows (Final Sale Units summed).")
                         else:
                             st.info("ℹ️ No duplicate Product Id values found to aggregate.")
@@ -1063,7 +1062,3 @@ if sales_file and inventory_file and pm_file:
     </div>
     """, unsafe_allow_html=True)
     
-
-
-
-
