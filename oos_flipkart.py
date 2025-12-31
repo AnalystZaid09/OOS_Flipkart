@@ -656,7 +656,6 @@ if sales_file and inventory_file and pm_file:
 
                     F_Sales = F_Sales[cols]
 
-                    
                     # MAIN processed full Excel (no filters)
                     excel_data_bytes = create_formatted_excel(F_Sales).getvalue()
 
@@ -744,7 +743,56 @@ if sales_file and inventory_file and pm_file:
                 except Exception as e:
                     st.error(f"❌ Error processing files: {str(e)}")
                     st.info("Please ensure all files are in the correct format and contain the required columns.")
+                    
+                # ---------- UNIQUE PRODUCT ID REPORT (CUSTOM COLUMNS + AGG RULES) ----------
+                st.markdown("---")
+                st.subheader("📊 Unique Product ID Report (Summed as per rules)")
 
+                # Select only required columns if exist
+                cols_needed = ["Product Id", "Vendor SKU Codes", "Product Name", "Brand Manager", "Brand", 
+                            "SKU ID", "Final Sale Units", "Final Sale Amount", "FNS", "CP", "DRR",
+                            "Flipkart Stock", "DOC"]
+
+                unique_df = F_Sales[[c for c in cols_needed if c in F_Sales.columns]].copy()
+
+                # Ensure numeric conversion
+                sum_cols = ["Final Sale Units", "Final Sale Amount", "CP", "DRR", "Flipkart Stock", "DOC"]
+                for c in sum_cols:
+                    if c in unique_df.columns:
+                        unique_df[c] = pd.to_numeric(unique_df[c], errors="coerce").fillna(0)
+
+                # Aggregation logic
+                agg_rules = {}
+                for col in unique_df.columns:
+                    if col == "Product Id":
+                        continue
+                    elif col in ["Vendor SKU Codes", "Product Name", "Brand Manager", "Brand", "SKU ID"]:
+                        agg_rules[col] = "first"   # take first occurrence
+                    elif col in sum_cols:
+                        agg_rules[col] = "sum"     # sum numeric columns
+                    else:
+                        agg_rules[col] = "first"   # default safe fallback
+
+                unique_df = unique_df.groupby("Product Id", as_index=False).agg(agg_rules)
+
+                # Display in Streamlit
+                st.dataframe(unique_df, height=350, use_container_width=True)
+
+                # Download button
+                unique_excel = BytesIO()
+                with pd.ExcelWriter(unique_excel, engine="openpyxl") as writer:
+                    unique_df.to_excel(writer, index=False, sheet_name="Unique_PID")
+                unique_excel.seek(0)
+
+                st.download_button(
+                    label="📥 Download Unique Product ID Report",
+                    data=unique_excel,
+                    file_name="Flipkart_Sales_Unique_ProductID_Summed.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+                st.success("✅ Unique Product ID report ready!")
 
         # ------------------------- VIEW + DOWNLOAD SECTION -------------------------
         if "F_Sales_df" in st.session_state:
@@ -1061,4 +1109,3 @@ if sales_file and inventory_file and pm_file:
         <p>Flipkart Sales Analysis Dashboard | Built with Streamlit</p>
     </div>
     """, unsafe_allow_html=True)
-    
